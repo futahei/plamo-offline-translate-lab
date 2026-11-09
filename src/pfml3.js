@@ -41,6 +41,24 @@ export function parseGlossary(raw, maxItems = 50) {
   return entries;
 }
 
+/** 画面上の原語・訳語の入力欄を、翻訳プロンプト用の用語ペアに変換する。 */
+export function parseGlossaryRows(rows, maxItems = 50) {
+  const entries = [];
+  for (const [index, row] of rows.entries()) {
+    const source = String(row.source ?? '').trim();
+    const target = String(row.target ?? '').trim();
+    if (!source && !target) continue;
+    if (!source || !target) {
+      throw new Error(`用語集の${index + 1}件目は原語と訳語の両方を入力してください`);
+    }
+    entries.push({ source, target });
+    if (entries.length > maxItems) {
+      throw new Error(`用語集は最大${maxItems}件まで登録できます`);
+    }
+  }
+  return entries;
+}
+
 /** PFNが公開するPFML3仕様に沿った翻訳プロンプトを構築する。 */
 export function buildTranslationPrompt({ text, sourceLang, targetLang, form, context, glossary }) {
   if (!text?.trim()) throw new Error('翻訳する文章を入力してほしいっス');

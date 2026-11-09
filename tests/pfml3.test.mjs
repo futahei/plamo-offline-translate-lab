@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildTranslationPrompt, cleanTranslation, parseGlossary } from '../src/pfml3.js';
+import { buildTranslationPrompt, cleanTranslation, parseGlossary, parseGlossaryRows } from '../src/pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from '../src/runtime-errors.js';
 
 test('公式PFML3の基本構成になる', () => {
@@ -31,6 +31,23 @@ test('行ごとの用語ペアを読み取る', () => {
 test('未完成・過大な用語集は拒否する', () => {
   assert.throws(() => parseGlossary('EOD'), /1行目/);
   assert.throws(() => parseGlossary('a => b\nc => d', 1), /最大1件/);
+});
+
+test('別々の入力欄から用語集を作成し、空欄は無視する', () => {
+  assert.deepEqual(parseGlossaryRows([
+    { source: ' dashboard ', target: ' 管理画面 ' },
+    { source: '', target: '' },
+    { source: 'A => B', target: 'C' },
+  ]), [
+    { source: 'dashboard', target: '管理画面' },
+    { source: 'A => B', target: 'C' },
+  ]);
+});
+
+test('用語ペアの片方が空欄の場合や上限超過を拒否する', () => {
+  assert.throws(() => parseGlossaryRows([{ source: 'owner', target: '' }]), /1件目/);
+  assert.throws(() => parseGlossaryRows([{ source: '', target: '担当者' }]), /原語と訳語/);
+  assert.throws(() => parseGlossaryRows([{ source: 'a', target: 'A' }, { source: 'b', target: 'B' }], 1), /最大1件/);
 });
 
 test('余計なPLaMo区切りトークンを翻訳結果から除去する', () => {

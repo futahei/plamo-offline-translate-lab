@@ -1,7 +1,7 @@
 import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
 import { TranslatorRuntime, MODEL, MODEL_REPO, detectWebGpu } from './engine.js';
-import { parseGlossary, TARGET_LANGUAGES } from './pfml3.js';
+import { parseGlossaryRows, TARGET_LANGUAGES } from './pfml3.js';
 
 const app = document.querySelector('#app');
 const translator = new TranslatorRuntime();
@@ -82,9 +82,11 @@ app.innerHTML = `
           <span class="model-credit"><i class="status-dot"></i> ${MODEL.label} · 端末内処理</span>
         </div>
         <div id="glossary-panel" class="tools-panel" hidden>
-          <label class="field-label" for="glossary">用語集</label>
-          <p class="field-help">1行に1組、最大50件。例：dashboard =&gt; 管理画面</p>
-          <textarea id="glossary" rows="5" spellcheck="false" placeholder="dashboard => 管理画面&#10;owner => 担当者"></textarea>
+          <div class="glossary-heading"><h2>用語集</h2><span id="glossary-count">0 / 50件</span></div>
+          <p class="field-help">翻訳で使いたい用語を登録できます。</p>
+          <div class="glossary-columns" aria-hidden="true"><span>原語</span><span>訳語</span></div>
+          <div class="glossary-rows" id="glossary-rows"></div>
+          <button type="button" class="add-glossary-btn" id="add-glossary">＋ 用語を追加</button>
         </div>
         <div id="settings-panel" class="tools-panel" hidden>
           <div class="settings-grid">
@@ -107,6 +109,65 @@ app.innerHTML = `
 const $ = (selector) => document.querySelector(selector);
 const state = { busy: false, swReady: false, gpuAvailable: false };
 let toastTimeout;
+
+const MAX_GLOSSARY_ITEMS = 50;
+
+function updateGlossaryRows() {
+  const rows = [...document.querySelectorAll('.glossary-row')];
+  rows.forEach((row, index) => {
+    row.querySelector('.glossary-source').setAttribute('aria-label', `原語 ${index + 1}件目`);
+    row.querySelector('.glossary-target').setAttribute('aria-label', `訳語 ${index + 1}件目`);
+    row.querySelector('.glossary-remove').setAttribute('aria-label', `${index + 1}件目を削除`);
+  });
+  const filled = rows.filter((row) => row.querySelector('.glossary-source').value.trim() || row.querySelector('.glossary-target').value.trim());
+  $('#glossary-count').textContent = `${filled.length} / ${MAX_GLOSSARY_ITEMS}件`;
+  $('#add-glossary').disabled = rows.length >= MAX_GLOSSARY_ITEMS;
+}
+
+function addGlossaryRow() {
+  if ($('#glossary-rows').children.length >= MAX_GLOSSARY_ITEMS) return;
+  const row = document.createElement('div');
+  row.className = 'glossary-row';
+
+  for (const [kind, label, placeholder] of [
+    ['source', '原語', '例：dashboard'],
+    ['target', '訳語', '例：管理画面'],
+  ]) {
+    const field = document.createElement('label');
+    field.className = 'glossary-cell';
+    const caption = document.createElement('span');
+    caption.className = 'glossary-mobile-label';
+    caption.textContent = label;
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = `glossary-${kind}`;
+    input.placeholder = placeholder;
+    input.autocomplete = 'off';
+    input.addEventListener('input', updateGlossaryRows);
+    field.append(caption, input);
+    row.append(field);
+  }
+
+  const remove = document.createElement('button');
+  remove.type = 'button';
+  remove.className = 'icon-button glossary-remove';
+  remove.title = 'この用語を削除';
+  remove.innerHTML = icon('close', 18);
+  remove.addEventListener('click', () => {
+    row.remove();
+    if (!$('#glossary-rows').children.length) addGlossaryRow();
+    updateGlossaryRows();
+  });
+  row.append(remove);
+  $('#glossary-rows').append(row);
+  updateGlossaryRows();
+}
+
+$('#add-glossary').addEventListener('click', () => {
+  addGlossaryRow();
+  $('#glossary-rows .glossary-row:last-child .glossary-source').focus();
+});
+addGlossaryRow();
 
 function toast(message, type = 'info') {
   const node = $('#toast');
@@ -271,7 +332,10 @@ $('#translate-btn').addEventListener('click', async () => {
   result.classList.add('thinking');
   $('#copy-result').disabled = true;
   try {
-    const glossary = parseGlossary($('#glossary').value);
+    const glossary = parseGlossaryRows([...document.querySelectorAll('.glossary-row')].map((row) => ({
+      source: row.querySelector('.glossary-source').value,
+      target: row.querySelector('.glossary-target').value,
+    })));
     const translation = await translator.translate({
       text: $('#source-text').value,
       sourceLang: $('#source-lang').value,
