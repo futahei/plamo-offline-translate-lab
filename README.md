@@ -9,11 +9,11 @@
 | 役割 | 技術 |
 | --- | --- |
 | UI / 配信 | HTML、JavaScript、Vite、GitHub Pages |
-| 推論基盤 | wllama v3（WebAssembly + 任意のWebGPU） |
+| 推論基盤 | PLaMo 3対応のwllamaソースビルド（固定コミット `d275dac` / WebAssembly + WebGPU） |
 | モデル | PLaMo 3 Translate 0.8B GGUF（Q4_0に固定） |
 | 翻訳入力 | PFML3（原文・対象言語・文脈・用語集・文体） |
 | オフライン | Workbox Service Worker（アプリ） + OPFS（GGUF） |
-| iPhone Safari | wllama-compat を同梱 |
+| iPhone Safari | 同じコミットのwllama-compatを同梱 |
 | テスト | Node.jsのPFML3ユニットテスト |
 
 翻訳はブラウザ内で実行される。モデル取得時にHugging Faceへ通信するが、翻訳対象のテキストは送信しない。APIキーや独自サーバーは不要。
@@ -25,6 +25,7 @@
 ```bash
 npm ci
 npm test
+bash scripts/build-wllama.sh  # 初回だけ。Docker Compose必須。数十分かかることがある
 npm run dev
 ```
 
@@ -43,12 +44,14 @@ npm run preview
 
 1. GitHubに公開リポジトリを新規作成し、このプロジェクトの全ファイル（`node_modules/`と`dist/`を除く）をpushする。
 2. GitHubの **Settings → Pages → Build and deployment** で **Source: GitHub Actions** を選ぶ。
-3. `main`へのpushで `.github/workflows/pages.yml` が実行され、`npm test`と`npm run build`の成功後に自動公開される。
+3. `main`へのpushで `.github/workflows/pages.yml` が実行され、PLaMo 3対応のwllamaをビルド（以降はActionsキャッシュで再利用）してから、`npm test`と`npm run build`の成功後に自動公開される。初回はDockerによるWASMのコンパイルに数十分かかる可能性がある。
 4. `https://<ユーザー名>.github.io/<リポジトリ名>/` にアクセスする。独自ドメインや費用は不要。
 
 Viteの `base: './'`、PWAの `start_url: './'` / `scope: './'` により、ユーザーサイトとプロジェクトサイトの両方のパス構成に対応。
 
 **GGUFはGitHubにコミットしないこと。** ファイルはHugging Faceからユーザー端末に直接ダウンロードし、ブラウザ内OPFSに保持する。
+
+**WASMバイナリもGitHubにコミットしないこと。** `scripts/build-wllama.sh` がwllamaの固定コミット `d275dac`（内部のllama.cpp `5aeac37`）をソースから取得・コンパイルする。生成したJS/WASMをGitHub Actionsが静的アセットとしてGitHub Pagesに配置する。初回アクセスでこれらの静的アセットを取得し、Service Workerが再訪用に保存する。
 
 ## LT向けオフライン実演
 
@@ -65,7 +68,7 @@ Viteの `base: './'`、PWAの `start_url: './'` / `scope: './'` により、ユ�
 ## 性能・互換性の既知の制約
 
 - GitHub PagesはCOOP/COEPレスポンスヘッダーを自由に設定できないため、PoCは **CPUを1スレッド**に固定している。WebGPUが使える端末ではGPUを優先する。
-- Safari/iOSはwllamaの通常ビルドが必要とするJSPI/Memory64に未対応の場合があり、同梱の `@wllama/wllama-compat` に切り替える。通常ビルドより遅い可能性がある。
+- Safari/iOSはwllamaの通常ビルドが必要とするJSPI/Memory64に未対応の場合があり、ソースから同時ビルドした `wllama-compat` に切り替える。通常ビルドより遅い可能性がある。
 - PLaMo 3 Translate 0.8BのQ4_0モデル本体は約0.55GB。推論にはこれ以外にもWASM、作業用メモリ、KVキャッシュが必要。
 - モバイル端末によってはWebGPUの初期化・メモリ確保に失敗する。その場合、CPUへ自動切り替えする。翻訳時の低水準エラーでもCPU・小さいコンテキストに一度だけ自動再試行する。
 - 最大コンテキストはメモリを抑えるため実験的に **2,048 tokens**に制限。自動復旧時は1,024 tokensに縮小する。長文と大量の用語集は対象外。
@@ -77,7 +80,9 @@ WebLLM（MLC AIのライブラリ）は、MLC形式に変換してコンパイ�
 
 ### `Invalid typed array length: 1163217991` への対処
 
-この数値を16進数にすると `0x45554c47` で、wllama内部の通信識別子 `GLUE` をリトルエンディアンで読んだ値に一致する。正常な出力サイズとして扱えず、WASMからの応答処理が失敗した可能性がある。原因がGPU・メモリ・wllama本体のどれかはスタックトレースなしでは断定できない。現在のPoCは翻訳時にこのエラーを検知した場合、モデルを保存領域から再利用してCPU・省メモリ設定で一度だけ再試行し、復旧できなければ詳しいエラーを表示する。実機で再発する場合はブラウザのコンソールログを取得する。
+この数値を16進数にすると `0x45554c47` で、wllama内部の通信識別子 `GLUE` をリトルエンディアンで読んだ値に一致する。応答が正常に返らず、入力ヘッダーが出力長として誤読されたことを意味する。
+
+以前のPoCは**npm版 `@wllama/wllama` 3.8.1を利用していたが、こちらはPLaMo 3トークナイザーを読み込めない**。この制約は[PLaMo 3のブラウザ推論を実現したSakuttoのビルド資料](https://github.com/jammaru/sakutto/blob/main/docs/BUILDING.md)でも明記されている。そのため、このPoCはPLaMo 3を読み込めるwllamaコミット `d275dac` のソースビルドに変更した。なお、本番のGitHub Pagesでの翻訳成功は**実機テストで検証する必要がある**。エラー発生時は自動でCPU・省メモリプロファイルに再試行し、ブラウザのコンソールへwllamaのネイティブログを出す。
 
 ## ライセンス
 
@@ -87,4 +92,5 @@ WebLLM（MLC AIのライブラリ）は、MLC形式に変換してコンパイ�
 
 - [PFN公式 PLaMo 3 Translate GGUFモデルカード](https://huggingface.co/pfnet/plamo-3-translate-0.8b-GGUF)
 - [wllama（ブラウザ用llama.cpp）](https://github.com/ngxson/wllama)
+- [SakuttoのPLaMo 3用wllamaビルド解説](https://github.com/jammaru/sakutto/blob/main/docs/BUILDING.md)（技術検証の参考）
 - [GitHub Pages公式ドキュメント](https://docs.github.com/en/pages)

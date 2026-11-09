@@ -28,6 +28,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm test
+      # Build and cache PLaMo 3 tokenizer-compatible WASM, rather than using
+      # the published wllama 3.8.1 runtime which cannot decode this model.
+      - uses: actions/cache@v4
+        id: wllama-cache
+        with:
+          path: public/vendor/wllama
+          key: plamo3-wllama-d275dac-emsdk-4.0.20-v1
+      - name: Compile PLaMo 3-compatible wllama (cold cache only)
+        if: steps.wllama-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-wllama.sh
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

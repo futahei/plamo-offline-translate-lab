@@ -1,7 +1,3 @@
-import { Wllama, LoggerWithoutDebug } from '@wllama/wllama';
-import wasmUrl from '../node_modules/@wllama/wllama/esm/wasm/wllama.wasm?url';
-import compatWasmUrl from '../node_modules/@wllama/wllama-compat/wasm/wllama.wasm?url';
-import compatWorkerCode from '../node_modules/@wllama/wllama-compat/wasm/wllama.js?raw';
 import { buildTranslationPrompt, cleanTranslation } from './pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from './runtime-errors.js';
 
@@ -16,16 +12,36 @@ export const MODEL = Object.freeze({
 export const MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/${MODEL.file}`;
 const PREVIOUS_MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf`;
 
-function makeRuntime() {
-  const wllama = new Wllama({ default: wasmUrl }, {
+// npm版wllama 3.8.1はPLaMo 3のトークナイザー非対応。
+// PLaMo 3対応のd275dacをビルドし、同一オリジンから配信する。
+const assetUrl = (filename) => new URL(`${import.meta.env.BASE_URL}vendor/wllama/${filename}`, document.baseURI).href;
+let runtimeAssetsPromise;
+
+async function getRuntimeAssets() {
+  if (!runtimeAssetsPromise) {
+    runtimeAssetsPromise = Promise.all([
+      import(/* @vite-ignore */ assetUrl('wllama.js')),
+      fetch(assetUrl('wllama-compat-module.js')).then((response) => {
+        if (!response.ok) throw new Error(`WASM互換モジュールの取得に失敗: HTTP ${response.status}`);
+        return response.text();
+      }),
+    ]).then(([module, compatWorkerCode]) => ({ module, compatWorkerCode }));
+  }
+  return runtimeAssetsPromise;
+}
+
+async function makeRuntime() {
+  const { module, compatWorkerCode } = await getRuntimeAssets();
+  const { Wllama, LoggerWithoutDebug } = module;
+  const wllama = new Wllama({ default: assetUrl('wllama.wasm') }, {
     allowOffline: true,
-    suppressNativeLog: true,
+    suppressNativeLog: false,
     logger: LoggerWithoutDebug,
   });
   wllama.setCompat({
-    wasm: compatWasmUrl,
+    wasm: assetUrl('wllama-compat.wasm'),
     worker: { code: compatWorkerCode },
-  });
+  }, 'firefox_safari');
   return wllama;
 }
 
@@ -45,7 +61,7 @@ export class TranslatorRuntime {
 
   async cachedModelUrl() {
     try {
-      const runtime = this.instance || makeRuntime();
+      const runtime = this.instance || await makeRuntime();
       const cached = await runtime.modelManager.getModels();
       if (cached.some((model) => model.url === MODEL_URL && model.size > 0)) return MODEL_URL;
       // 旧バージョンからの利用者は、ダウンロード済みのQ4_K_Mを再利用する。
@@ -73,7 +89,7 @@ export class TranslatorRuntime {
     const modelUrl = (await this.cachedModelUrl()) || MODEL_URL;
 
     const attempt = async (useGpu) => {
-      const wllama = makeRuntime();
+      const wllama = await makeRuntime();
       this.instance = wllama;
       await wllama.loadModelFromUrl(modelUrl, {
         // 軽量ノート・スマホを優先。推論失敗後の保守的プロファイルではさらに絞る。

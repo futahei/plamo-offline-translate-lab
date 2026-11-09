@@ -50,7 +50,7 @@ app.innerHTML = `
             <div class="section-topline"><span class="step">01</span><h2>モデルを準備する</h2><span class="status" id="model-status">未読み込み</span></div>
             <p class="section-description">PLaMoの小型モデルを1種類に固定。初回だけ約${MODEL.sizeMB}MBを取得し、以降はブラウザ内から読み込むっス。</p>
             <div class="fixed-model"><span class="fixed-model-badge">固定モデル</span><strong>${MODEL.label}</strong><small>${MODEL.quantization} · 約${MODEL.sizeMB}MB</small></div>
-            <p class="model-note">推論方法は自動選択。WebGPUを優先し、失敗時はCPUに切り替えるっス。旧版で取得したモデルがあればそのキャッシュを再利用するっス。</p>
+            <p class="model-note">PLaMo 3対応版wllamaを使用。推論方法は自動選択で、WebGPUに失敗したらCPUへ切り替えるっス。旧版で取得したモデルのキャッシュも再利用するっス。</p>
             <div class="progress-block" id="download-progress" hidden><div class="progress-info"><span id="progress-label">取得中...</span><span id="progress-percent">0%</span></div><div class="progress-track"><span id="progress-fill"></span></div></div>
             <button class="primary-btn load-btn" id="load-btn">${icon('download')} モデルをダウンロードして起動</button>
             <div class="support-row"><span><i class="indicator" id="gpu-dot"></i> WebGPU <strong id="gpu-state">確認中</strong></span><span><i class="indicator" id="pwa-dot"></i> オフライン起動 <strong id="pwa-state">確認中</strong></span></div>
