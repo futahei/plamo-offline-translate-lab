@@ -9,15 +9,18 @@ const history = [];
 
 const icon = (name, size = 18) => {
   const paths = {
-    spark: '<path d="m12 3 1.8 6.2L20 11l-6.2 1.8L12 19l-1.8-6.2L4 11l6.2-1.8L12 3Z"/><path d="m19 18 .6 1.4L21 20l-1.4.6L19 22l-.6-1.4L17 20l1.4-.6L19 18Z"/>',
+    spark: '<path d="m12 3 1.8 6.2L20 11l-6.2 1.8L12 19l-1.8-6.2L4 11l6.2-1.8L12 3Z"/>',
     wifi: '<path d="M3 9a15 15 0 0 1 18 0M6 12a10 10 0 0 1 12 0M9 15a5 5 0 0 1 6 0"/><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none"/>',
     wifiOff: '<path d="m2 2 20 20M3 9a15 15 0 0 1 4-2M21 9a15 15 0 0 0-10-3M6 12a10 10 0 0 1 4-1M18 12a10 10 0 0 0-3-1M9 15a5 5 0 0 1 6 0"/>',
     download: '<path d="M12 3v12m0 0 4-4m-4 4-4-4M4 17v3h16v-3"/>',
     arrow: '<path d="M7 7h13m0 0-4-4m4 4-4 4M17 17H4m0 0 4-4m-4 4 4 4"/>',
-    shield: '<path d="M12 2 4 5v6c0 5 3.5 8.4 8 11 4.5-2.6 8-6 8-11V5l-8-3Z"/><path d="m9 11 2 2 4-4"/>',
-    chip: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 9h6v6H9zM9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"/>',
+    chevron: '<path d="m6 9 6 6 6-6"/>',
     refresh: '<path d="M20 11a8 8 0 0 0-14-5L3 9m0-6v6h6M4 13a8 8 0 0 0 14 5l3-3m0 6v-6h-6"/>',
-    flask: '<path d="M9 3h6m-5 0v7l-5.5 8.7A2 2 0 0 0 6.2 22h11.6a2 2 0 0 0 1.7-3.3L14 10V3M7.5 16h9"/>',
+    book: '<path d="M12 7c-2.5-2-6-2.7-10-2v14c4-.7 7.5 0 10 2m0-14c2.5-2 6-2.7 10-2v14c-4-.7-7.5 0-10 2m0-14v14"/>',
+    sliders: '<path d="M4 6h10m4 0h2M4 12h2m4 0h10M4 18h10m4 0h2"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="18" r="2"/>',
+    copy: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/>',
+    close: '<path d="M18 6 6 18M6 6l12 12"/>',
+    settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06-1.9 1.9-.06-.06A1.7 1.7 0 0 0 16 18.4a1.7 1.7 0 0 0-1.4 1.57V21h-5.2v-1.03A1.7 1.7 0 0 0 8 18.4a1.7 1.7 0 0 0-1.87.34l-.06.06-1.9-1.9.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.57-1.4H2v-3.2h1.03A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.87L4.2 7.07l1.9-1.9.06.06A1.7 1.7 0 0 0 8 5.6a1.7 1.7 0 0 0 1.4-1.57V3h5.2v1.03A1.7 1.7 0 0 0 16 5.6a1.7 1.7 0 0 0 1.87-.34l.06-.06 1.9 1.9-.06.06A1.7 1.7 0 0 0 19.4 9a1.7 1.7 0 0 0 1.57 1.4H22v3.2h-1.03A1.7 1.7 0 0 0 19.4 15Z"/>',
     check: '<path d="m5 12 5 5L20 7"/>',
     external: '<path d="M14 4h6v6M20 4l-9 9M20 13v7H4V4h7"/>',
   };
@@ -29,67 +32,75 @@ const options = TARGET_LANGUAGES.map((l) => `<option value="${l.code}">${l.label
 app.innerHTML = `
   <div class="site-shell">
     <header class="topbar">
-      <div class="brand"><span class="brand-logo">P<span>.</span></span><span class="brand-name">PLaMo <small>OFFLINE LAB</small></span></div>
-      <div class="topbar-right"><span class="pill subtle" id="network-chip">${icon('wifi')} 接続確認中</span><a class="topbar-link" href="https://huggingface.co/${MODEL_REPO}" target="_blank" rel="noopener noreferrer">モデル出典 ${icon('external', 13)}</a></div>
+      <a class="brand" href="./" aria-label="KaruYaku ホーム">
+        <svg class="brand-logo" width="38" height="38" viewBox="0 0 48 48" aria-hidden="true"><path fill="currentColor" d="M6 8h23l16 16-16 16H6l16-16z"/><path fill="#fff" d="M3 22h25v4H3z"/></svg>
+        <strong class="brand-name">KaruYaku</strong>
+      </a>
+      <span class="brand-tagline">軽く、つながず、翻訳する。</span>
+      <div class="topbar-right">
+        <span class="network-chip" id="network-chip" role="status"><i class="status-dot"></i><span id="network-label">接続状態を確認中</span></span>
+        <button class="icon-button settings-shortcut" type="button" id="open-settings" aria-label="詳細設定を開く" title="詳細設定">${icon('settings', 23)}</button>
+      </div>
     </header>
 
     <main>
-      <section class="hero">
-        <div class="hero-copy">
-          <div class="eyebrow"><span class="eyebrow-dot"></span> ON-DEVICE TRANSLATION EXPERIMENT</div>
-          <h1>言葉を、<br /><em>機内モード</em>へ。</h1>
-          <p>国産翻訳LLM <strong>PLaMo 3 Translate 0.8B</strong> を、ブラウザの中だけで実行する実験室。翻訳内容を外部APIに送らず、モデル取得後はネットワークがなくても動くことを目指すPoCっス。</p>
-          <div class="hero-tags"><span>${icon('shield', 16)} 推論は端末内</span><span>${icon('chip', 16)} CPU / WebGPU</span><span>${icon('flask', 16)} ベンチマーク対応</span></div>
-        </div>
-        <div class="hero-visual" aria-hidden="true"><div class="orbit orbit-outer"></div><div class="orbit orbit-mid"></div><div class="orbit orbit-inner"></div><div class="visual-core"><span>JA</span><span class="core-line"></span><span>EN</span></div><span class="orbit-dot orbit-dot-a"></span><span class="orbit-dot orbit-dot-b"></span><span class="visual-caption">LOCAL MODEL · NO API KEY</span></div>
+      <div class="page-heading"><h1>テキスト翻訳</h1><p>翻訳はこの端末内で処理されます</p></div>
+
+      <section class="model-setup" id="setup-banner" aria-label="翻訳モデルの準備">
+        <div class="setup-copy"><strong id="model-status">モデルの準備が必要です</strong><span>初回は約${MODEL.sizeMB}MBのダウンロードが必要です</span></div>
+        <button type="button" class="setup-btn" id="load-btn">${icon('download', 17)} モデルを準備</button>
+        <div class="progress-block" id="download-progress" hidden><div class="progress-info"><span id="progress-label">準備中…</span><span id="progress-percent">0%</span></div><div class="progress-track"><span id="progress-fill"></span></div></div>
       </section>
 
-      <section class="workspace">
-        <div class="left-column">
-          <div class="panel model-panel">
-            <div class="section-topline"><span class="step">01</span><h2>モデルを準備する</h2><span class="status" id="model-status">未読み込み</span></div>
-            <p class="section-description">PLaMoの小型モデルを1種類に固定。初回だけ約${MODEL.sizeMB}MBを取得し、以降はブラウザ内から読み込むっス。</p>
-            <div class="fixed-model"><span class="fixed-model-badge">固定モデル</span><strong>${MODEL.label}</strong><small>${MODEL.quantization} · 約${MODEL.sizeMB}MB</small></div>
-            <p class="model-note">PLaMo 3対応版wllamaを使用。推論方法は自動選択で、WebGPUに失敗したらCPUへ切り替えるっス。旧版で取得したモデルのキャッシュも再利用するっス。</p>
-            <div class="progress-block" id="download-progress" hidden><div class="progress-info"><span id="progress-label">取得中...</span><span id="progress-percent">0%</span></div><div class="progress-track"><span id="progress-fill"></span></div></div>
-            <button class="primary-btn load-btn" id="load-btn">${icon('download')} モデルをダウンロードして起動</button>
-            <div class="support-row"><span><i class="indicator" id="gpu-dot"></i> WebGPU <strong id="gpu-state">確認中</strong></span><span><i class="indicator" id="pwa-dot"></i> オフライン起動 <strong id="pwa-state">確認中</strong></span></div>
-          </div>
-
-          <div class="panel settings-panel">
-            <div class="section-topline"><span class="step">02</span><h2>翻訳する</h2></div>
-            <div class="language-row">
-              <label>原文の言語<select id="source-lang"><option value="auto">自動判定</option>${options}</select></label>
-              <button class="swap-btn" type="button" id="swap-languages" title="言語を入れ替え">${icon('arrow', 20)}</button>
-              <label>翻訳先の言語<select id="target-lang">${options}</select></label>
-            </div>
-            <label class="text-input-label" for="source-text">入力テキスト <span id="char-count">0 / 2,000</span></label>
-            <textarea id="source-text" maxlength="2000" rows="5" placeholder="Translate this sentence into Japanese.">Technology should make people's lives easier.</textarea>
-            <details class="advanced"><summary>翻訳オプション・用語集 <span>任意</span></summary>
-              <div class="advanced-content">
-                <label>日本語の文体<select id="form"><option value="auto">モデルに任せる</option><option value="polite">です・ます調</option><option value="plain">だ・である調</option></select></label>
-                <label>文脈（Context）<textarea id="context" rows="2" placeholder="例：ソフトウェアの操作マニュアルです。"></textarea></label>
-                <label>用語集（1行に1組、最大50件）<textarea id="glossary" rows="3" spellcheck="false" placeholder="EOD => 本日中&#10;dashboard => 管理画面"></textarea></label>
-                <span class="field-hint">用語集は公式のPFML3に変換してモデルへ直接渡すっス。大量の登録は処理時間が伸びやすいっス。</span>
-              </div>
-            </details>
-            <button class="primary-btn translate-btn" id="translate-btn" disabled>${icon('spark')} 翻訳する</button>
-            <div class="result-header"><h3>翻訳結果</h3><button type="button" class="text-button" id="copy-result">コピー</button></div>
-            <div class="translation-result" id="result-text" aria-live="polite">モデルを読み込むと翻訳できるっス。</div>
-            <div class="metrics"><div><span>総推論時間</span><strong id="metric-time">—</strong></div><div><span>出力トークン</span><strong id="metric-tokens">—</strong></div><div><span>生成速度</span><strong id="metric-speed">—</strong></div></div>
-          </div>
+      <section class="translator" aria-label="テキスト翻訳">
+        <div class="language-bar">
+          <label class="language-control"><span class="sr-only">原文の言語</span><select id="source-lang"><option value="auto">言語を検出</option>${options}</select></label>
+          <button type="button" class="swap-btn" id="swap-languages" aria-label="翻訳言語を入れ替える" title="言語を入れ替える">${icon('arrow', 21)}</button>
+          <label class="language-control"><span class="sr-only">翻訳先の言語</span><select id="target-lang">${options}</select></label>
         </div>
-
-        <aside class="right-column">
-          <div class="panel offline-panel"><div class="section-topline"><span class="panel-symbol">${icon('wifiOff', 19)}</span><h2>オフライン実験</h2></div><p>本番デモは、この順番で行うっス。</p><ol class="demo-steps"><li><b>オンラインでモデルを読み込む</b><span>完了までタブを閉じずに待機。</span></li><li><b>Wi-Fi / モバイル通信をOFF</b><span>機内モードに切り替える。</span></li><li><b>サイトを再読み込みして翻訳</b><span>本当にネット接続なしで動くか検証。</span></li></ol><div class="offline-alert">${icon('shield', 17)} <span>アプリとWASMはPWAのキャッシュ、モデルはブラウザ内のOPFSに保存するっス。ストレージが消去された場合は再取得が必要っス。</span></div></div>
-          <div class="panel benchmark-panel"><div class="section-topline"><span class="panel-symbol">${icon('flask', 19)}</span><h2>実験ログ</h2></div><p>翻訳ごとの処理時間を記録。端末を変えて比較できるっス。</p><div class="log-table-wrap"><table class="log-table"><thead><tr><th>回</th><th>時間</th><th>速度</th></tr></thead><tbody id="history-list"><tr><td colspan="3" class="muted-cell">翻訳すると記録されるっス</td></tr></tbody></table></div><button type="button" class="outline-btn" id="export-log" disabled>測定結果をCSV保存</button></div>
-          <div class="info-card"><div class="info-kicker">ABOUT THIS PROJECT</div><p>これはPLaMo公式サービスではない非公式PoCっス。モデルの権利はPreferred Networksに帰属し、<strong>PLaMo Community License</strong>に従うっス。</p><p>推論基盤はGGUF対応の <strong>wllama（WebGPU / WASM）</strong>。MLC製のWebLLMとは別のライブラリっス。</p><a href="https://huggingface.co/${MODEL_REPO}" target="_blank" rel="noopener noreferrer">公式モデルカード ${icon('external', 14)}</a></div>
-        </aside>
+        <div class="translation-grid">
+          <section class="translation-card source-card" aria-label="翻訳する文章">
+            <label class="sr-only" for="source-text">翻訳する文章</label>
+            <textarea id="source-text" maxlength="2000" spellcheck="true" placeholder="翻訳したい文章を入力してください">Small language models can run entirely in your browser. Your text stays on this device.</textarea>
+            <div class="source-footer"><span id="char-count">0文字</span><button class="icon-button clear-btn" id="clear-text" type="button" aria-label="入力を消去" title="入力を消去">${icon('close', 19)}</button></div>
+          </section>
+          <button class="primary-btn translate-btn" id="translate-btn" type="button" disabled>翻訳する</button>
+          <section class="translation-card result-card" aria-label="翻訳結果">
+            <div class="translation-result empty" id="result-text" aria-live="polite">翻訳結果がここに表示されます</div>
+            <div class="result-footer"><button type="button" class="icon-button" id="copy-result" aria-label="翻訳結果をコピー" title="コピー" disabled>${icon('copy', 22)}</button></div>
+          </section>
+        </div>
       </section>
 
+      <section class="tools" aria-label="追加機能">
+        <div class="tools-bar">
+          <div class="tools-buttons">
+            <button type="button" class="tool-button" id="toggle-glossary" aria-expanded="false" aria-controls="glossary-panel">${icon('book', 22)} 用語集</button>
+            <span class="tool-divider" aria-hidden="true"></span>
+            <button type="button" class="tool-button" id="toggle-settings" aria-expanded="false" aria-controls="settings-panel">${icon('sliders', 22)} 詳細設定</button>
+          </div>
+          <span class="model-credit"><i class="status-dot"></i> ${MODEL.label} · 端末内処理</span>
+        </div>
+        <div id="glossary-panel" class="tools-panel" hidden>
+          <label class="field-label" for="glossary">用語集</label>
+          <p class="field-help">1行に1組、最大50件。例：dashboard =&gt; 管理画面</p>
+          <textarea id="glossary" rows="5" spellcheck="false" placeholder="dashboard => 管理画面&#10;owner => 担当者"></textarea>
+        </div>
+        <div id="settings-panel" class="tools-panel" hidden>
+          <div class="settings-grid">
+            <label class="field-label">日本語の文体<select id="form"><option value="auto">自動</option><option value="polite">です・ます調</option><option value="plain">だ・である調</option></select></label>
+            <label class="field-label">文脈<textarea id="context" rows="2" placeholder="例：ソフトウェアの操作マニュアル"></textarea></label>
+          </div>
+          <div class="technical-status"><span>実行方式 <strong id="backend-state">未起動</strong></span><span>WebGPU <strong id="gpu-state">確認中</strong></span><span>オフライン用キャッシュ <strong id="pwa-state">確認中</strong></span></div>
+          <div class="metrics"><div><span>推論時間</span><strong id="metric-time">—</strong></div><div><span>出力トークン</span><strong id="metric-tokens">—</strong></div><div><span>生成速度</span><strong id="metric-speed">—</strong></div></div>
+          <div class="history-header"><h2>実験ログ</h2><button type="button" id="export-log" class="outline-btn" disabled>CSVで保存</button></div>
+          <table class="log-table"><thead><tr><th>回</th><th>時間</th><th>速度</th></tr></thead><tbody id="history-list"><tr><td colspan="3" class="muted-cell">まだ記録がありません</td></tr></tbody></table>
+          <p class="model-disclaimer">非公式の実験サイトです。使用モデル：<a href="https://huggingface.co/${MODEL_REPO}" target="_blank" rel="noopener noreferrer">${MODEL.label} ${icon('external', 13)}</a>（PLaMo Community License）。推論基盤：wllama。端末やブラウザによっては動作しない場合があります。</p>
+          <p class="runtime-error" id="runtime-error" hidden></p>
+        </div>
+      </section>
       <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </main>
-    <footer><span>PLaMo Offline Translate Lab <span class="footer-dot">·</span> Experimental browser inference</span><span>GitHub Pages / PWA / wllama</span></footer>
   </div>
 `;
 
@@ -109,31 +120,34 @@ function toast(message, type = 'info') {
 function setBusy(value) {
   state.busy = value;
   $('#load-btn').disabled = value;
-  $('#translate-btn').disabled = value || !translator.instance?.isModelLoaded();
+  $('#translate-btn').disabled = value || !translator.instance?.isModelLoaded() || !$('#source-text').value.trim();
   for (const id of ['source-lang', 'target-lang']) {
-    $("#" + id).disabled = value;
+    $('#' + id).disabled = value;
   }
+  $('#swap-languages').disabled = value;
 }
 
 function setModelStatus(message, status = 'neutral') {
   const node = $('#model-status');
   node.textContent = message;
   node.dataset.status = status;
+  $('#backend-state').textContent = translator.activeBackend || '未起動';
+  $('#setup-banner').hidden = status === 'ready';
+  setNetworkStatus();
 }
 
 function setNetworkStatus() {
-  const online = navigator.onLine;
+  const ready = Boolean(state.swReady && translator.instance?.isModelLoaded());
   const node = $('#network-chip');
-  node.className = `pill ${online ? 'subtle' : 'success'}`;
-  node.innerHTML = `${icon(online ? 'wifi' : 'wifiOff')} ${online ? 'オンライン' : 'オフライン'}`;
+  node.className = `network-chip ${ready ? 'ready' : (navigator.onLine ? '' : 'offline-not-ready')}`;
+  $('#network-label').textContent = ready ? 'オフライン利用可能' : (navigator.onLine ? 'モデル準備中' : 'オフライン（未準備）');
 }
 
 async function refreshCapabilities() {
   state.gpuAvailable = await detectWebGpu();
   $('#gpu-state').textContent = state.gpuAvailable ? '利用可能' : '利用不可';
-  $('#gpu-dot').classList.toggle('good', state.gpuAvailable);
   $('#pwa-state').textContent = state.swReady ? '準備済み' : '準備中 / 非対応';
-  $('#pwa-dot').classList.toggle('good', state.swReady);
+  setNetworkStatus();
 }
 
 function updateProgress({ loaded, total }) {
@@ -153,45 +167,89 @@ async function refreshModelCache() {
   try {
     const cached = await translator.isCached();
     if (cached && !translator.instance?.isModelLoaded()) {
-      setModelStatus('端末内に保存済み', 'cached');
-      $('#load-btn').innerHTML = `${icon('check')} 保存済みモデルを起動`;
+      setModelStatus('モデルは保存済みです', 'cached');
+      $('#load-btn').innerHTML = `${icon('check')} モデルを起動`;
+      $('.setup-copy span').textContent = 'ダウンロードせずに再利用できます';
     } else if (!translator.instance?.isModelLoaded()) {
-      setModelStatus('未読み込み', 'neutral');
-      $('#load-btn').innerHTML = `${icon('download')} モデルをダウンロードして起動`;
+      setModelStatus('モデルの準備が必要です', 'neutral');
+      $('#load-btn').innerHTML = `${icon('download')} モデルを準備`;
     }
   } catch (error) {
-    console.warn('モデルキャッシュを確認できないっス', error);
+    console.warn('モデルキャッシュを確認できません', error);
   }
 }
 
 $('#load-btn').addEventListener('click', async () => {
   if (state.busy) return;
   setBusy(true);
-  setModelStatus('モデル起動中', 'loading');
-  $('#load-btn').textContent = '読み込み中…';
+  setModelStatus('モデルを準備しています', 'loading');
+  $('#load-btn').textContent = '準備中…';
   $('#progress-fill').style.width = '0%';
-  const startedAt = performance.now();
   try {
     const loaded = await translator.load({ onProgress: updateProgress });
-    setModelStatus(`${loaded.backend} で起動中`, 'ready');
-    $('#load-btn').innerHTML = `${icon('check')} モデル起動完了`;
+    setModelStatus('モデルの準備が完了しました', 'ready');
+    $('#backend-state').textContent = loaded.backend;
+    $('#load-btn').innerHTML = `${icon('check')} 準備完了`;
     $('#download-progress').hidden = true;
-    toast(`PLaMoを${loaded.backend}で起動したっス！（${((performance.now() - startedAt) / 1000).toFixed(1)}秒）`, 'success');
+    $('#runtime-error').hidden = true;
+    toast('モデルの準備が完了しました', 'success');
   } catch (error) {
-    setModelStatus('起動失敗', 'error');
-    $('#load-btn').innerHTML = `${icon('refresh')} もう一度モデルを起動`;
-    toast(`モデルを起動できなかったっス：${error.message}`, 'error');
+    setModelStatus('モデルの準備に失敗しました', 'error');
+    $('#load-btn').innerHTML = `${icon('refresh')} 再試行`;
+    $('#runtime-error').textContent = cleanError(error);
+    $('#runtime-error').hidden = false;
+    toast('モデルを起動できませんでした。詳細設定からエラーを確認できます。', 'error');
     console.error(error);
   } finally {
     setBusy(false);
   }
 });
 
+function cleanError(error) {
+  return String(error?.message || error)
+    .replaceAll('したっス', 'しました')
+    .replaceAll('ほしいっス', 'ください')
+    .replaceAll('するっス', 'します')
+    .replaceAll('っス', '');
+}
+
 $('#source-text').addEventListener('input', () => {
-  $('#char-count').textContent = `${$('#source-text').value.length.toLocaleString('ja-JP')} / 2,000`;
+  const count = $('#source-text').value.length;
+  $('#char-count').textContent = `${count.toLocaleString('ja-JP')}文字`;
+  const result = $('#result-text');
+  if (result.dataset.lastTranslation) {
+    delete result.dataset.lastTranslation;
+    result.textContent = '翻訳結果がここに表示されます';
+    result.classList.add('empty');
+    $('#copy-result').disabled = true;
+  }
+  setBusy(state.busy);
 });
 $('#source-text').dispatchEvent(new Event('input'));
 $('#target-lang').value = 'ja';
+$('#source-lang').value = 'en';
+
+$('#clear-text').addEventListener('click', () => {
+  $('#source-text').value = '';
+  $('#source-text').dispatchEvent(new Event('input'));
+  $('#source-text').focus();
+});
+
+function toggleTool(name) {
+  for (const current of ['glossary', 'settings']) {
+    const button = $('#toggle-' + current);
+    const panel = $('#' + current + '-panel');
+    const shouldOpen = current === name && panel.hidden;
+    panel.hidden = !shouldOpen;
+    button.setAttribute('aria-expanded', String(shouldOpen));
+  }
+}
+$('#toggle-glossary').addEventListener('click', () => toggleTool('glossary'));
+$('#toggle-settings').addEventListener('click', () => toggleTool('settings'));
+$('#open-settings').addEventListener('click', () => {
+  if ($('#settings-panel').hidden) toggleTool('settings');
+  $('#settings-panel').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
 
 $('#swap-languages').addEventListener('click', () => {
   const source = $('#source-lang');
@@ -208,8 +266,10 @@ $('#translate-btn').addEventListener('click', async () => {
   if (state.busy) return;
   setBusy(true);
   const result = $('#result-text');
-  result.textContent = 'PLaMoが翻訳中っス…';
+  result.textContent = '翻訳しています…';
+  result.classList.remove('empty');
   result.classList.add('thinking');
+  $('#copy-result').disabled = true;
   try {
     const glossary = parseGlossary($('#glossary').value);
     const translation = await translator.translate({
@@ -220,18 +280,19 @@ $('#translate-btn').addEventListener('click', async () => {
       context: $('#context').value,
       glossary,
       onFallback: (previousBackend) => {
-        setModelStatus('CPUへ自動切替中', 'loading');
-        result.textContent = '推論エンジンのエラーを検知。モデルを再ダウンロードせず、CPU・省メモリ設定で再試行中っス…';
-        toast(`${previousBackend}で問題を検知したっス。CPUへ自動切替するっス`, 'info');
+        $('#backend-state').textContent = 'CPU / WASM に切り替え中';
+        result.textContent = '実行方式を切り替えて再試行しています…';
+        toast(`${previousBackend}で問題が発生したため、CPUで再試行しています。`);
       },
     });
-    setModelStatus(`${translator.activeBackend} で起動中`, 'ready');
-    result.textContent = translation.text || '翻訳結果が空だったっス。短い文で再試行してほしいっス。';
-    result.dataset.lastTranslation = translation.text;
+    setModelStatus('モデルの準備が完了しました', 'ready');
+    result.textContent = translation.text || '翻訳結果が空でした。短い文章で再試行してください。';
+    result.dataset.lastTranslation = translation.text || '';
+    $('#copy-result').disabled = !translation.text;
     $('#metric-time').textContent = `${(translation.elapsedMs / 1000).toFixed(2)} 秒`;
     $('#metric-tokens').textContent = translation.tokens == null ? '—' : `${translation.tokens} tokens`;
     $('#metric-speed').textContent = translation.speed == null ? '—' : `${translation.speed.toFixed(1)} tok/s`;
-    if (translation.stoppedByLimit) toast('生成上限に達したっス。短い文章で試してほしいっス', 'info');
+    if (translation.stoppedByLimit) toast('生成上限に達しました。短い文章で再試行してください。');
     history.unshift({
       index: history.length + 1,
       time: translation.elapsedMs / 1000,
@@ -243,14 +304,18 @@ $('#translate-btn').addEventListener('click', async () => {
       at: new Date().toISOString(),
     });
     renderHistory();
+    $('#runtime-error').hidden = true;
   } catch (error) {
-    result.textContent = `翻訳に失敗したっス。\n実行方式: ${translator.activeBackend || '初期化失敗'}\n詳細: ${error.message}`;
-    toast(error.message, 'error');
+    result.textContent = '翻訳できませんでした。詳細設定からエラーを確認できます。';
+    result.classList.add('empty');
+    $('#runtime-error').textContent = `実行方式: ${translator.activeBackend || '未起動'}\n${cleanError(error)}`;
+    $('#runtime-error').hidden = false;
+    toast('翻訳に失敗しました', 'error');
     if (!translator.instance?.isModelLoaded()) {
-      setModelStatus('再起動が必要', 'error');
+      setModelStatus('モデルの再起動が必要です', 'error');
       $('#load-btn').innerHTML = `${icon('refresh')} モデルを再起動`;
     } else {
-      setModelStatus(`${translator.activeBackend} で起動中`, 'ready');
+      setModelStatus('モデルの準備が完了しました', 'ready');
     }
     console.error(error);
   } finally {
@@ -264,9 +329,9 @@ $('#copy-result').addEventListener('click', async () => {
   if (!text) return;
   try {
     await navigator.clipboard.writeText(text);
-    toast('訳文をコピーしたっス', 'success');
+    toast('翻訳結果をコピーしました', 'success');
   } catch {
-    toast('クリップボードへコピーできなかったっス', 'error');
+    toast('クリップボードにコピーできませんでした', 'error');
   }
 });
 
@@ -293,7 +358,7 @@ $('#export-log').addEventListener('click', () => {
   const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));
   const link = document.createElement('a');
   link.href = url;
-  link.download = `plamo-browser-benchmark-${new Date().toISOString().slice(0, 10)}.csv`;
+  link.download = `karuyaku-benchmark-${new Date().toISOString().slice(0, 10)}.csv`;
   link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 });
@@ -315,7 +380,7 @@ if ('serviceWorker' in navigator) {
         refreshCapabilities();
       }).catch(() => {});
     },
-    onRegisterError: (error) => console.warn('Service Workerが登録できなかったっス', error),
+    onRegisterError: (error) => console.warn('Service Workerを登録できませんでした', error),
   });
 }
 
