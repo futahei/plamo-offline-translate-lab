@@ -29,7 +29,7 @@ bash scripts/build-wllama.sh  # 初回だけ。Docker Compose必須。数十分�
 npm run dev
 ```
 
-iPhone向けQ4_0分割実験をローカルで試す場合は `bash scripts/build-q4-shards.sh` も実行する。約550MBのモデルを取得し、llama.cppの `llama-gguf-split` をコンパイルして `public/models/` に分割モデルを生成する。CMake・C++ビルド環境・Git・curlが必要。通常のPC / iPhone Q2_K利用時は不要。
+iPhone向けQ4_0分割実験をローカルで試す場合は `bash scripts/build-q4-shards.sh` も実行する。約550MBのモデルを取得し、llama.cppの `llama-gguf-split` をコンパイルして `public/models/` に分割モデルを生成する（32テンソルごとに分割。各ファイルのサイズは一定ではない）。CMake・C++ビルド環境・Git・curlが必要。通常のPC / iPhone Q2_K利用時は不要。
 
 表示された `http://localhost:5173/` を開く。初回にモデルを読み込むと、約0.55GBがダウンロードされる。
 
@@ -51,7 +51,7 @@ npm run preview
 
 Viteの `base: './'`、PWAの `start_url: './'` / `scope: './'` により、ユーザーサイトとプロジェクトサイトの両方のパス構成に対応。
 
-**GGUFはGitHubリポジトリにコミットしないこと。** PCのQ4_0とiPhoneの標準Q2_KはHugging Faceからユーザー端末へ直接ダウンロードする。一方、iPhone用の実験的Q4_0はGitHub ActionsでGGUFを正規形式の約80MBずつに分割し、GitHub Pagesから配信する。いずれもブラウザ内OPFSへ保存する。実験用分割モデルには配布元のPLaMo Community Licenseの全文も同梱する。GitHub Pagesの容量・帯域の制約には注意が必要。
+**GGUFはGitHubリポジトリにコミットしないこと。** PCのQ4_0とiPhoneの標準Q2_KはHugging Faceからユーザー端末へ直接ダウンロードする。一方、iPhone用の実験的Q4_0はGitHub ActionsでGGUFを正規形式の32テンソル単位に分割し、GitHub Pagesから配信する。いずれもブラウザ内OPFSへ保存する。実験用分割モデルには配布元のPLaMo Community Licenseの全文も同梱する。GitHub Pagesの容量・帯域の制約には注意が必要。
 
 **WASMバイナリもGitHubにコミットしないこと。** `scripts/build-wllama.sh` がwllamaの固定コミット `d275dac`（内部のllama.cpp `5aeac37`）をソースから取得・コンパイルする。生成したJS/WASMをGitHub Actionsが静的アセットとしてGitHub Pagesに配置する。初回アクセスでこれらの静的アセットを取得し、Service Workerが再訪用に保存する。
 

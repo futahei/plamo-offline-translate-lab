@@ -34,7 +34,9 @@ cmake -S "$work_dir/llama.cpp" -B "$work_dir/llama.cpp/build" \
   -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_TOOLS=ON -DGGML_NATIVE=OFF
 cmake --build "$work_dir/llama.cpp/build" --target llama-gguf-split --parallel 2
 
-"$work_dir/llama.cpp/build/bin/llama-gguf-split" --split-max-size 80M \
+# PLaMo 3は単一テンソルが80MBを超える場合があり、サイズ上限で分割すると
+# 先頭チャンクが空になって失敗する。テンソル単位の上限なら安全に分割できる。
+"$work_dir/llama.cpp/build/bin/llama-gguf-split" --split-max-tensors 32 \
   "$model_source" "$output_dir/plamo-3-translate-0.8b-Q4_0"
 
 node scripts/write-q4-manifest.mjs "$output_dir"

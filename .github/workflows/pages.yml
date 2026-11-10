@@ -44,7 +44,7 @@ jobs:
         id: q4-shards-cache
         with:
           path: public/models
-          key: plamo3-q4-0-gguf-split-80m-d6be065-v1
+          key: plamo3-q4-0-gguf-split-32t-d6be065-v2
       - name: Split Q4_0 GGUF for iPhone experiment (cold cache only)
         if: steps.q4-shards-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-q4-shards.sh
