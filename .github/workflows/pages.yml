@@ -12,13 +12,11 @@ permissions:
 
 concurrency:
   group: github-pages
-  cancel-in-progress: true
+  # 先行デプロイを強制終了するとPages側に実行中ロックが残る場合がある。
+  cancel-in-progress: false
 
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,5 +51,15 @@ jobs:
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist
+
+  # ビルドと公開を分離し、デプロイ失敗時の「失敗ジョブだけ再実行」で
+  # 同じrunに github-pages 成果物が重複作成される問題を防ぐ。
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4
