@@ -38,6 +38,16 @@ jobs:
       - name: Compile PLaMo 3-compatible wllama (cold cache only)
         if: steps.wllama-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-wllama.sh
+      # オフライン実験用のQ4_0はGGUFの正規分割形式で生成する。
+      # GitHub Pagesに配布し、wllamaのOPFSキャッシュに保存する。
+      - uses: actions/cache@v4
+        id: q4-shards-cache
+        with:
+          path: public/models
+          key: plamo3-q4-0-gguf-split-80m-d6be065-v1
+      - name: Split Q4_0 GGUF for iPhone experiment (cold cache only)
+        if: steps.q4-shards-cache.outputs.cache-hit != 'true'
+        run: bash scripts/build-q4-shards.sh
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

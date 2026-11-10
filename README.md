@@ -10,7 +10,7 @@
 | --- | --- |
 | UI / 配信 | HTML、JavaScript、Vite、GitHub Pages |
 | 推論基盤 | PLaMo 3対応のwllamaソースビルド（固定コミット `d275dac` / WebAssembly + WebGPU） |
-| モデル | PLaMo 3 Translate 0.8B GGUF（PCはQ4_0、iPhone/iPadは省メモリのQ2_K） |
+| モデル | PLaMo 3 Translate 0.8B GGUF（PCはQ4_0、iPhone/iPadは標準Q2_K＋任意の分割Q4_0実験） |
 | 翻訳入力 | PFML3（原文・対象言語・文脈・用語集・文体） |
 | オフライン | Workbox Service Worker（アプリ） + OPFS（GGUF） |
 | iPhone Safari | 同じコミットのwllama-compatを同梱 |
@@ -18,7 +18,7 @@
 
 翻訳はブラウザ内で実行される。モデル取得時にHugging Faceへ通信するが、翻訳対象のテキストは送信しない。APIキーや独自サーバーは不要。
 
-利用者にモデル選択UIは表示しない。PCの新規取得はQ4_0に固定するが、旧版PoCでダウンロード済みのQ4_K_Mがブラウザ内にある場合だけ、自動でそのモデルを再利用する。iPhone/iPadではメモリ削減のためQ2_K（約410MB）を選ぶため、以前にQ4モデルを保存していてもQ2_Kを追加で取得する。量子化による翻訳品質の低下があり得る。
+PCにはモデル選択UIを表示しない。新規取得はQ4_0に固定するが、旧版PoCでダウンロード済みのQ4_K_Mがブラウザ内にある場合だけ自動で再利用する。iPhone/iPadは従来どおり省メモリのQ2_K（約410MB）が標準。詳細設定からのみ、Q4_0（約550MB）の**GGUF分割読み込み実験**を明示的に選択できる。再読み込みするとQ2_Kに戻るため、Q4実験でブラウザが終了しても自動で再試行しない。
 
 ## ローカルで動かす
 
@@ -28,6 +28,8 @@ npm test
 bash scripts/build-wllama.sh  # 初回だけ。Docker Compose必須。数十分かかることがある
 npm run dev
 ```
+
+iPhone向けQ4_0分割実験をローカルで試す場合は `bash scripts/build-q4-shards.sh` も実行する。約550MBのモデルを取得し、llama.cppの `llama-gguf-split` をコンパイルして `public/models/` に分割モデルを生成する。CMake・C++ビルド環境・Git・curlが必要。通常のPC / iPhone Q2_K利用時は不要。
 
 表示された `http://localhost:5173/` を開く。初回にモデルを読み込むと、約0.55GBがダウンロードされる。
 
@@ -44,12 +46,12 @@ npm run preview
 
 1. GitHubに公開リポジトリを新規作成し、このプロジェクトの全ファイル（`node_modules/`と`dist/`を除く）をpushする。
 2. GitHubの **Settings → Pages → Build and deployment** で **Source: GitHub Actions** を選ぶ。
-3. `main`へのpushで `.github/workflows/pages.yml` が実行され、PLaMo 3対応のwllamaをビルド（以降はActionsキャッシュで再利用）してから、`npm test`と`npm run build`の成功後に自動公開される。初回はDockerによるWASMのコンパイルに数十分かかる可能性がある。
+3. `main`へのpushで `.github/workflows/pages.yml` が実行され、PLaMo 3対応のwllamaとQ4_0分割モデルをビルド（以降はActionsキャッシュで再利用）してから、`npm test`と`npm run build`の成功後に自動公開される。初回はコンパイルとモデル取得に時間がかかる。
 4. `https://<ユーザー名>.github.io/<リポジトリ名>/` にアクセスする。独自ドメインや費用は不要。
 
 Viteの `base: './'`、PWAの `start_url: './'` / `scope: './'` により、ユーザーサイトとプロジェクトサイトの両方のパス構成に対応。
 
-**GGUFはGitHubにコミットしないこと。** ファイルはHugging Faceからユーザー端末に直接ダウンロードし、ブラウザ内OPFSに保持する。
+**GGUFはGitHubリポジトリにコミットしないこと。** PCのQ4_0とiPhoneの標準Q2_KはHugging Faceからユーザー端末へ直接ダウンロードする。一方、iPhone用の実験的Q4_0はGitHub ActionsでGGUFを正規形式の約80MBずつに分割し、GitHub Pagesから配信する。いずれもブラウザ内OPFSへ保存する。実験用分割モデルには配布元のPLaMo Community Licenseの全文も同梱する。GitHub Pagesの容量・帯域の制約には注意が必要。
 
 **WASMバイナリもGitHubにコミットしないこと。** `scripts/build-wllama.sh` がwllamaの固定コミット `d275dac`（内部のllama.cpp `5aeac37`）をソースから取得・コンパイルする。生成したJS/WASMをGitHub Actionsが静的アセットとしてGitHub Pagesに配置する。初回アクセスでこれらの静的アセットを取得し、Service Workerが再訪用に保存する。
 
@@ -63,13 +65,22 @@ Viteの `base: './'`、PWAの `start_url: './'` / `scope: './'` により、ユ�
 6. 「保存済みモデルを起動」を押して翻訳。キャッシュにあるモデルを再使用する。
 7. 必要ならCSVを保存して処理速度をLTの結果として使う。
 
+### iPhone Q2_K vs Q4_0 分割読み込み実験
+
+1. 同じiPhone・同じSafariで、詳細設定の「標準 · Q2_K」を使って短い同一の文章を翻訳し、CSVを保存する。
+2. 詳細設定の「高精度 · Q4_0（実験）」に切り替える。初回は分割GGUF（合計約550MB）を取得する。モデル起動と翻訳が成功するか観察する。
+3. 同じ文章と設定でQ4_0を翻訳し、結果・推論時間・tok/sを比較してCSVを保存する。通信を切ってキャッシュ後の再起動・翻訳も試す。
+4. 成功・失敗どちらでも機種／OS／ブラウザ、起動可否、ダウンロード後のページ終了有無、生成時間、翻訳結果を記録する。
+
+**仮説：** ファイルを分割すればダウンロード・キャッシュ投入時の一時的なメモリ負担は軽くなる可能性があるが、読み込み後のGGUFモデル本体・KVキャッシュ・WASMヒープに必要なメモリは大きいまま。従って**Q4_0がiPhone上で動作する保証はない**。このPoCは実験機能の実装であって、実機での成功を主張していない。
+
 **注意：** OSの機内モードでもブラウザの保存領域は残るが、プライベートブラウジング、ストレージの削除、容量不足による自動消去はオフライン起動を妨げる。機種・ブラウザ・GPUで動作状況が変わるため、本番で使う端末で必ず事前検証すること。
 
 ## 性能・互換性の既知の制約
 
 - GitHub PagesはCOOP/COEPレスポンスヘッダーを自由に設定できないため、PoCは **CPUを1スレッド**に固定している。WebGPUが使える端末ではGPUを優先する。
 - Safari/iOSはwllamaの通常ビルドが必要とするJSPI/Memory64に未対応の場合があり、ソースから同時ビルドした `wllama-compat` に切り替える。通常ビルドより遅い可能性がある。
-- iPhone/iPadでは使用する量子化モデルをQ2_K（約410MB）に下げ、CPU/WASMのみで動作させ、コンテキスト512 tokens・バッチ32に制限する。**iOSのブラウザがWASMや大きなモデルを読み込める保証はなく**、メモリ制限でタブが終了する場合がある。SafariとChromeはどちらもiOSのWebKitを利用するため、ブラウザを変えても回避できない可能性がある。
+- iPhone/iPadでは通常の量子化モデルをQ2_K（約410MB）に下げ、CPU/WASMのみで動作させ、コンテキスト512 tokens・バッチ32に制限する。実験モードの分割Q4_0もこの省メモリ推論設定を使う。**iOSのブラウザがWASMや大きなモデルを読み込める保証はなく**、メモリ制限でタブが終了する場合がある。SafariとChromeはどちらもiOSのWebKitを利用するため、ブラウザを変えても回避できない可能性がある。
 - Service Workerの更新はユーザーの明示操作で適用する。大きなモデルのダウンロード・読み込み途中にアプリ更新で勝手にページがリロードする問題を防ぐため。ただしiOSのメモリ不足によるプロセス終了・リロードはこの変更では防げない。
 - PLaMo 3 Translate 0.8BのQ4_0モデル本体は約0.55GB。推論にはこれ以外にもWASM、作業用メモリ、KVキャッシュが必要。
 - モバイル端末によってはWebGPUの初期化・メモリ確保に失敗する。その場合、CPUへ自動切り替えする。翻訳時の低水準エラーでもCPU・小さいコンテキストに一度だけ自動再試行する。

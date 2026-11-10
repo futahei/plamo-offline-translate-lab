@@ -159,6 +159,16 @@ main { width: min(100% - 6%, 1584px); margin: 0 auto; padding: 41px 0 48px; }
 .tools-panel textarea { resize: vertical; min-height: 90px; line-height: 1.6; }
 .tools-panel textarea::placeholder { color: #a2adbd; }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.mobile-model-options { min-width: 0; margin: 25px 0 0; padding: 15px 16px 12px; border: 1px solid #c8d8ee; border-radius: 12px; background: #f9fbff; }
+.mobile-model-options legend { padding: 0 5px; font-size: 13px; font-weight: 750; color: #283d61; }
+.model-option { display: flex; align-items: center; gap: 11px; padding: 10px 4px; cursor: pointer; }
+.model-option + .model-option { border-top: 1px solid #e1e9f5; }
+.model-option input { flex: 0 0 auto; accent-color: var(--accent); width: 18px; height: 18px; }
+.model-option > span:not(.experimental-badge) { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.model-option strong { font-size: 13px; }
+.model-option small { color: var(--muted); font-size: 11px; }
+.experimental-badge { margin-left: auto; padding: 3px 7px; color: #7c5012; background: #fff0d5; border-radius: 5px; font-size: 10px; font-weight: 700; }
+.model-option-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
 .technical-status { display: flex; flex-wrap: wrap; gap: 13px 30px; margin-top: 24px; color: var(--muted); font-size: 12px; }
 .technical-status strong { color: #1f304b; font-weight: 700; }
 .metrics { display: flex; flex-wrap: wrap; gap: 30px; margin-top: 21px; }

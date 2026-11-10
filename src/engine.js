@@ -1,6 +1,7 @@
 import { buildTranslationPrompt, cleanTranslation } from './pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from './runtime-errors.js';
 import { inferenceSettings, isIOSDevice } from './device-profile.js';
+import { firstQ4ShardFilename } from './model-shards.js';
 
 export const MODEL_REPO = 'pfnet/plamo-3-translate-0.8b-GGUF';
 export const MODEL = Object.freeze({
@@ -16,10 +17,12 @@ const IOS_MODEL = Object.freeze({
   sizeMB: 410,
   quantization: 'Q2_K',
 });
+export const IOS_EXPERIMENTAL_MODEL = MODEL;
 export const IS_IOS = isIOSDevice(typeof navigator === 'undefined' ? {} : navigator);
 export const DEVICE_MODEL = IS_IOS ? IOS_MODEL : MODEL;
 export const MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/${DEVICE_MODEL.file}`;
 const PREVIOUS_MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf`;
+const modelAssetUrl = (filename) => new URL(`${import.meta.env.BASE_URL}models/${filename}`, document.baseURI).href;
 
 // npm版wllama 3.8.1はPLaMo 3のトークナイザー非対応。
 // PLaMo 3対応のd275dacをビルドし、同一オリジンから配信する。
@@ -67,12 +70,33 @@ export class TranslatorRuntime {
   instance = null;
   activeBackend = null;
   profile = null;
+  iosModelMode = 'stable';
+
+  getSelectedModel() {
+    return IS_IOS && this.iosModelMode === 'experimental-q4' ? IOS_EXPERIMENTAL_MODEL : DEVICE_MODEL;
+  }
+
+  async setIOSModelMode(mode) {
+    if (!IS_IOS || !['stable', 'experimental-q4'].includes(mode)) return;
+    if (this.iosModelMode === mode) return;
+    await this.unload();
+    this.iosModelMode = mode;
+  }
+
+  async selectedModelUrl() {
+    if (!IS_IOS || this.iosModelMode === 'stable') return MODEL_URL;
+    const response = await fetch(modelAssetUrl('q4-manifest.json'));
+    if (!response.ok) throw new Error(`Q4_0実験モデルの配布情報を取得できません (HTTP ${response.status})`);
+    const filename = firstQ4ShardFilename(await response.json());
+    return modelAssetUrl(filename);
+  }
 
   async cachedModelUrl() {
     try {
+      const selectedUrl = await this.selectedModelUrl();
       const runtime = this.instance || await makeRuntime();
       const cached = await runtime.modelManager.getModels();
-      if (cached.some((model) => model.url === MODEL_URL && model.size > 0)) return MODEL_URL;
+      if (cached.some((model) => model.url === selectedUrl && model.size > 0)) return selectedUrl;
       // iOSでは従来の大きなモデルを再利用せず、小型Q2_Kのみを使う。
       if (!IS_IOS && cached.some((model) => model.url === PREVIOUS_MODEL_URL && model.size > 0)) return PREVIOUS_MODEL_URL;
     } catch (error) {
@@ -97,7 +121,7 @@ export class TranslatorRuntime {
     // ピークメモリが上がるため、最初からCPUを選ぶ。
     const gpuAvailable = !IS_IOS && await detectWebGpu();
     const shouldUseGpu = backend !== 'cpu' && gpuAvailable;
-    const modelUrl = (await this.cachedModelUrl()) || MODEL_URL;
+    const modelUrl = (await this.cachedModelUrl()) || await this.selectedModelUrl();
 
     const attempt = async (useGpu) => {
       const wllama = await makeRuntime();

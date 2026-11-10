@@ -96,11 +96,18 @@ app.innerHTML = `
             <label class="field-label">日本語の文体<select id="form"><option value="auto">自動</option><option value="polite">です・ます調</option><option value="plain">だ・である調</option></select></label>
             <label class="field-label">文脈<textarea id="context" rows="2" placeholder="例：ソフトウェアの操作マニュアル"></textarea></label>
           </div>
-          <div class="technical-status"><span>実行方式 <strong id="backend-state">未起動</strong></span><span>WebGPU <strong id="gpu-state">確認中</strong></span><span>オフライン用キャッシュ <strong id="pwa-state">確認中</strong></span></div>
+          ${IS_IOS ? `
+            <fieldset class="mobile-model-options" id="mobile-model-options">
+              <legend>iPhoneモデル（実験）</legend>
+              <label class="model-option"><input type="radio" name="ios-model" value="stable" checked><span><strong>標準 · Q2_K</strong><small>約410MB · メモリ節約</small></span></label>
+              <label class="model-option"><input type="radio" name="ios-model" value="experimental-q4"><span><strong>高精度 · Q4_0</strong><small>約550MB · GGUF分割読み込み</small></span><span class="experimental-badge">実験</span></label>
+              <p class="model-option-note">Q4_0はブラウザのメモリ制限で終了する可能性があります。分割しても推論時の使用メモリは減りません。再読み込み後は標準のQ2_Kに戻ります。</p>
+            </fieldset>` : ''}
+          <div class="technical-status"><span>量子化 <strong id="quantization-state">${DEVICE_MODEL.quantization}</strong></span><span>実行方式 <strong id="backend-state">未起動</strong></span><span>WebGPU <strong id="gpu-state">確認中</strong></span><span>オフライン用キャッシュ <strong id="pwa-state">確認中</strong></span></div>
           <div class="metrics"><div><span>推論時間</span><strong id="metric-time">—</strong></div><div><span>出力トークン</span><strong id="metric-tokens">—</strong></div><div><span>生成速度</span><strong id="metric-speed">—</strong></div></div>
           <div class="history-header"><h2>実験ログ</h2><button type="button" id="export-log" class="outline-btn" disabled>CSVで保存</button></div>
-          <table class="log-table"><thead><tr><th>回</th><th>時間</th><th>速度</th></tr></thead><tbody id="history-list"><tr><td colspan="3" class="muted-cell">まだ記録がありません</td></tr></tbody></table>
-          <p class="model-disclaimer">非公式の実験サイトです。使用モデル：<a href="https://huggingface.co/${MODEL_REPO}" target="_blank" rel="noopener noreferrer">${MODEL.label} ${icon('external', 13)}</a>（PLaMo Community License）。推論基盤：wllama。端末やブラウザによっては動作しない場合があります。</p>
+          <table class="log-table"><thead><tr><th>回</th><th>量子化</th><th>時間</th><th>速度</th></tr></thead><tbody id="history-list"><tr><td colspan="4" class="muted-cell">まだ記録がありません</td></tr></tbody></table>
+          <p class="model-disclaimer">非公式の実験サイトです。使用モデル：<a href="https://huggingface.co/${MODEL_REPO}" target="_blank" rel="noopener noreferrer">${MODEL.label} ${icon('external', 13)}</a>（<a href="https://plamo.preferredai.jp/info/plamo-community-license-en" target="_blank" rel="noopener noreferrer">PLaMo Community License</a>）。推論基盤：wllama。端末やブラウザによっては動作しない場合があります。</p>
           <p class="runtime-error" id="runtime-error" hidden></p>
         </div>
       </section>
@@ -211,6 +218,7 @@ function setBusy(value) {
     $('#' + id).disabled = value;
   }
   $('#swap-languages').disabled = value;
+  document.querySelectorAll('input[name="ios-model"]').forEach((input) => { input.disabled = value; });
 }
 
 function setModelStatus(message, status = 'neutral') {
@@ -259,10 +267,35 @@ async function refreshModelCache() {
     } else if (!translator.instance?.isModelLoaded()) {
       setModelStatus('モデルの準備が必要です', 'neutral');
       $('#load-btn').innerHTML = `${icon('download')} モデルを準備`;
+      $('.setup-copy span').textContent = `初回は約${translator.getSelectedModel().sizeMB}MBのダウンロードが必要です`;
     }
   } catch (error) {
     console.warn('モデルキャッシュを確認できません', error);
   }
+}
+
+if (IS_IOS) {
+  document.querySelectorAll('input[name="ios-model"]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      if (!input.checked || state.busy) return;
+      setBusy(true);
+      try {
+        await translator.setIOSModelMode(input.value);
+        $('#quantization-state').textContent = translator.getSelectedModel().quantization;
+        $('#download-progress').hidden = true;
+        $('#runtime-error').hidden = true;
+        setModelStatus('モデルを切り替えました', 'neutral');
+        $('.setup-copy span').textContent = `初回は約${translator.getSelectedModel().sizeMB}MBのダウンロードが必要です`;
+        await refreshModelCache();
+      } catch (error) {
+        $('#runtime-error').textContent = cleanError(error);
+        $('#runtime-error').hidden = false;
+        toast('モデルの切り替えに失敗しました', 'error');
+      } finally {
+        setBusy(false);
+      }
+    });
+  });
 }
 
 $('#load-btn').addEventListener('click', async () => {
@@ -390,6 +423,7 @@ $('#translate-btn').addEventListener('click', async () => {
       speed: translation.speed,
       tokens: translation.tokens,
       model: MODEL.label,
+      quantization: translator.getSelectedModel().quantization,
       backend: translator.activeBackend,
       device: navigator.userAgent,
       at: new Date().toISOString(),
@@ -430,7 +464,7 @@ function renderHistory() {
   $('#history-list').replaceChildren();
   for (const item of history.slice(0, 8)) {
     const row = document.createElement('tr');
-    const cells = [String(item.index), `${item.time.toFixed(2)}秒`, item.speed == null ? '—' : `${item.speed.toFixed(1)} tok/s`];
+    const cells = [String(item.index), item.quantization, `${item.time.toFixed(2)}秒`, item.speed == null ? '—' : `${item.speed.toFixed(1)} tok/s`];
     for (const value of cells) {
       const cell = document.createElement('td');
       cell.textContent = value;
@@ -443,7 +477,7 @@ function renderHistory() {
 
 $('#export-log').addEventListener('click', () => {
   if (!history.length) return;
-  const cols = ['at', 'model', 'backend', 'time', 'tokens', 'speed', 'device'];
+  const cols = ['at', 'model', 'quantization', 'backend', 'time', 'tokens', 'speed', 'device'];
   const escape = (value) => `"${String(value ?? '').replaceAll('"', '""')}"`;
   const csv = [cols.join(','), ...history.slice().reverse().map((item) => cols.map((col) => escape(item[col])).join(','))].join('\r\n');
   const url = URL.createObjectURL(new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' }));

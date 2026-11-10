@@ -1,6 +1,7 @@
 node_modules/
 dist/
 public/vendor/wllama/
+public/models/
 vendor/
 *.log
 .DS_Store
