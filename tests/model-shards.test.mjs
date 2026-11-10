@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { firstQ4ShardFilename } from '../src/model-shards.js';
+import { firstQ4ShardFilename, q4ShardSizes } from '../src/model-shards.js';
 
 test('validates the first shard URL for a complete GGUF split', () => {
   const filename = 'plamo-3-translate-0.8b-Q4_0-00001-of-00008.gguf';
@@ -17,4 +17,17 @@ test('rejects unexpected GGUF paths and inconsistent counts', () => {
   ]) {
     assert.throws(() => firstQ4ShardFilename(manifest));
   }
+});
+
+test('validates exact published shard sizes before cache repair', () => {
+  const manifest = {
+    firstShard: 'plamo-3-translate-0.8b-Q4_0-00001-of-00002.gguf',
+    shardCount: 2,
+    shardSizes: [120, 80],
+    totalBytes: 200,
+  };
+  assert.deepEqual(q4ShardSizes(manifest), [120, 80]);
+  assert.throws(() => q4ShardSizes({ ...manifest, shardSizes: [120, 79] }));
+  assert.throws(() => q4ShardSizes({ ...manifest, shardSizes: [120] }));
+  assert.throws(() => q4ShardSizes({ ...manifest, shardSizes: [120, 0] }));
 });

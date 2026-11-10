@@ -11,3 +11,14 @@ export function firstQ4ShardFilename(manifest) {
   }
   return filename;
 }
+
+export function q4ShardSizes(manifest) {
+  firstQ4ShardFilename(manifest);
+  const sizes = manifest.shardSizes;
+  if (!Array.isArray(sizes) || sizes.length !== manifest.shardCount ||
+      sizes.some((size) => !Number.isSafeInteger(size) || size < 4) ||
+      sizes.reduce((sum, size) => sum + size, 0) !== manifest.totalBytes) {
+    throw new Error('Q4_0モデルの分割サイズ情報が不正です。');
+  }
+  return sizes;
+}

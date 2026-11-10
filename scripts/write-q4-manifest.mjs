@@ -15,10 +15,12 @@ if (names.some((name, index) => name !== expected[index])) {
 }
 
 let totalBytes = 0;
+const shardSizes = [];
 for (const name of names) {
   const info = await stat(resolve(directory, name));
   if (!info.isFile() || info.size < 4) throw new Error(`不正なGGUFファイル: ${name}`);
   totalBytes += info.size;
+  shardSizes.push(info.size);
 }
 if (totalBytes < 400_000_000 || totalBytes > 650_000_000) {
   throw new Error(`Q4_0の分割後サイズが想定外です: ${totalBytes}`);
@@ -29,6 +31,7 @@ const manifest = {
   quantization: 'Q4_0',
   firstShard: names[0],
   shardCount: names.length,
+  shardSizes,
   totalBytes,
   distribution: 'GitHub Pages / GGUF split',
 };

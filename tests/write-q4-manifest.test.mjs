@@ -23,6 +23,7 @@ test('builds an ordered manifest for the GGUF shards', async () => {
     assert.equal(manifest.firstShard, 'plamo-3-translate-0.8b-Q4_0-00001-of-00006.gguf');
     assert.equal(manifest.shardCount, 6);
     assert.equal(manifest.totalBytes, 480_000_000);
+    assert.deepEqual(manifest.shardSizes, Array(6).fill(80_000_000));
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

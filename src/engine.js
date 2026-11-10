@@ -1,8 +1,8 @@
 import { buildTranslationPrompt, cleanTranslation } from './pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from './runtime-errors.js';
 import { inferenceSettings, isIOSDevice, IOS_MODEL_PREFERENCE_KEY, preferredIOSModelMode } from './device-profile.js';
-import { firstQ4ShardFilename } from './model-shards.js';
-import { cachedModelFileNames, modelCacheState } from './model-cache.js';
+import { firstQ4ShardFilename, q4ShardSizes } from './model-shards.js';
+import { cachedModelFileNames, modelCacheState, modelShardUrls } from './model-cache.js';
 
 export const MODEL_REPO = 'pfnet/plamo-3-translate-0.8b-GGUF';
 export const MODEL = Object.freeze({
@@ -30,6 +30,20 @@ const modelAssetUrl = (filename) => new URL(`${import.meta.env.BASE_URL}models/$
 // PLaMo 3対応のd275dacをビルドし、同一オリジンから配信する。
 const assetUrl = (filename) => new URL(`${import.meta.env.BASE_URL}vendor/wllama/${filename}`, document.baseURI).href;
 let runtimeAssetsPromise;
+let q4ManifestPromise;
+
+function getQ4Manifest() {
+  if (!q4ManifestPromise) {
+    q4ManifestPromise = fetch(modelAssetUrl('q4-manifest.json')).then(async (response) => {
+      if (!response.ok) throw new Error(`Q4_0モデルの配布情報を取得できません (HTTP ${response.status})`);
+      return response.json();
+    }).catch((error) => {
+      q4ManifestPromise = null;
+      throw error;
+    });
+  }
+  return q4ManifestPromise;
+}
 
 async function getRuntimeAssets() {
   if (!runtimeAssetsPromise) {
@@ -102,16 +116,36 @@ export class TranslatorRuntime {
   async selectedModelUrl() {
     if (!IS_IOS) return MODEL_URL;
     if (this.iosModelMode === 'stable') return IOS_LIGHT_MODEL_URL;
-    const response = await fetch(modelAssetUrl('q4-manifest.json'));
-    if (!response.ok) throw new Error(`Q4_0モデルの配布情報を取得できません (HTTP ${response.status})`);
-    const filename = firstQ4ShardFilename(await response.json());
+    const filename = firstQ4ShardFilename(await getQ4Manifest());
     return modelAssetUrl(filename);
+  }
+
+  // 一部のSafariでは分割ファイルのレスポンスにContent-Lengthがなく、
+  // wllamaが保存サイズを0として記録する。配布時に確定したサイズとの
+  // 一致を確認できた場合だけメタデータを補正する。
+  async repairQ4CacheMetadata(runtime, modelUrl, cachedFiles) {
+    if (!IS_IOS || this.iosModelMode !== 'experimental-q4') return cachedFiles;
+    const urls = modelShardUrls(modelUrl);
+    const sizes = q4ShardSizes(await getQ4Manifest());
+    const filesByUrl = new Map(cachedFiles.map((file) => [file.metadata?.originalURL, file]));
+    let repaired = false;
+    for (const [index, url] of urls.entries()) {
+      const file = filesByUrl.get(url);
+      if (!file || file.size !== sizes[index] || file.metadata?.originalSize === file.size) continue;
+      await runtime.cacheManager.writeMetadata(file.name, {
+        ...file.metadata,
+        originalURL: url,
+        originalSize: sizes[index],
+      });
+      repaired = true;
+    }
+    return repaired ? runtime.cacheManager.list() : cachedFiles;
   }
 
   async modelCacheInfo() {
     const selectedUrl = await this.selectedModelUrl();
     const runtime = this.instance || await makeRuntime();
-    const cachedFiles = await runtime.cacheManager.list();
+    const cachedFiles = await this.repairQ4CacheMetadata(runtime, selectedUrl, await runtime.cacheManager.list());
     const selected = modelCacheState(selectedUrl, cachedFiles);
     if (selected.complete) return { ...selected, url: selectedUrl };
     if (!IS_IOS) {
@@ -149,7 +183,9 @@ export class TranslatorRuntime {
       }),
     });
     const verified = await this.modelCacheInfo();
-    if (!verified.complete) throw new Error('モデルの保存が完了していません。もう一度「モデルを準備」を押してください。');
+    if (!verified.complete) {
+      throw new Error(`モデルの保存を確認できません（${verified.saved}/${verified.total}ファイル）。端末の空き容量やSafariの保存領域を確認してください。`);
+    }
     return { fromCache: false, state: verified };
   }
 
