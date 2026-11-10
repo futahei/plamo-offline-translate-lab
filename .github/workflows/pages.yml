@@ -46,6 +46,9 @@ jobs:
       - name: Split Q4_0 GGUF for iPhone experiment (cold cache only)
         if: steps.q4-shards-cache.outputs.cache-hit != 'true'
         run: bash scripts/build-q4-shards.sh
+      # Restoreした旧キャッシュにも最新のサイズ情報を付けて配布する。
+      - name: Refresh shard manifest from cached GGUF files
+        run: node scripts/write-q4-manifest.mjs public/models
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
