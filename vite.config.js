@@ -5,7 +5,8 @@ export default defineConfig({
   base: './',
   plugins: [
     VitePWA({
-      registerType: 'autoUpdate',
+      // モデルのダウンロード・推論を途中で切らないよう更新は利用者が承認する。
+      registerType: 'prompt',
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'KaruYaku - オフライン翻訳',
@@ -24,8 +25,8 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 32 * 1024 * 1024,
         navigateFallback: 'index.html',
         cleanupOutdatedCaches: true,
-        clientsClaim: true,
-        skipWaiting: true,
+        clientsClaim: false,
+        skipWaiting: false,
       },
     }),
   ],

@@ -1,5 +1,6 @@
 import { buildTranslationPrompt, cleanTranslation } from './pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from './runtime-errors.js';
+import { inferenceSettings, isIOSDevice } from './device-profile.js';
 
 export const MODEL_REPO = 'pfnet/plamo-3-translate-0.8b-GGUF';
 export const MODEL = Object.freeze({
@@ -9,7 +10,15 @@ export const MODEL = Object.freeze({
   quantization: 'Q4_0',
 });
 
-export const MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/${MODEL.file}`;
+const IOS_MODEL = Object.freeze({
+  label: MODEL.label,
+  file: 'plamo-3-translate-0.8b-Q2_K.gguf',
+  sizeMB: 410,
+  quantization: 'Q2_K',
+});
+export const IS_IOS = isIOSDevice(typeof navigator === 'undefined' ? {} : navigator);
+export const DEVICE_MODEL = IS_IOS ? IOS_MODEL : MODEL;
+export const MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/${DEVICE_MODEL.file}`;
 const PREVIOUS_MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf`;
 
 // npm版wllama 3.8.1はPLaMo 3のトークナイザー非対応。
@@ -64,8 +73,8 @@ export class TranslatorRuntime {
       const runtime = this.instance || await makeRuntime();
       const cached = await runtime.modelManager.getModels();
       if (cached.some((model) => model.url === MODEL_URL && model.size > 0)) return MODEL_URL;
-      // 旧バージョンからの利用者は、ダウンロード済みのQ4_K_Mを再利用する。
-      if (cached.some((model) => model.url === PREVIOUS_MODEL_URL && model.size > 0)) return PREVIOUS_MODEL_URL;
+      // iOSでは従来の大きなモデルを再利用せず、小型Q2_Kのみを使う。
+      if (!IS_IOS && cached.some((model) => model.url === PREVIOUS_MODEL_URL && model.size > 0)) return PREVIOUS_MODEL_URL;
     } catch (error) {
       console.warn('モデルのキャッシュを確認できなかったっス', error);
     }
@@ -76,7 +85,7 @@ export class TranslatorRuntime {
     return Boolean(await this.cachedModelUrl());
   }
 
-  async load({ backend = 'auto', profile = 'normal', onProgress = () => {} } = {}) {
+  async load({ backend = 'auto', profile = IS_IOS ? 'mobile' : 'normal', onProgress = () => {} } = {}) {
     if (this.instance) {
       await this.instance.exit().catch(() => {});
       this.instance = null;
@@ -84,7 +93,9 @@ export class TranslatorRuntime {
       this.profile = null;
     }
 
-    const gpuAvailable = await detectWebGpu();
+    // iOSはSafari・ChromeともWebKit。GPUで失敗してWASMに再起動すると
+    // ピークメモリが上がるため、最初からCPUを選ぶ。
+    const gpuAvailable = !IS_IOS && await detectWebGpu();
     const shouldUseGpu = backend !== 'cpu' && gpuAvailable;
     const modelUrl = (await this.cachedModelUrl()) || MODEL_URL;
 
@@ -92,9 +103,7 @@ export class TranslatorRuntime {
       const wllama = await makeRuntime();
       this.instance = wllama;
       await wllama.loadModelFromUrl(modelUrl, {
-        // 軽量ノート・スマホを優先。推論失敗後の保守的プロファイルではさらに絞る。
-        n_ctx: profile === 'safe' ? 1024 : 2048,
-        n_batch: profile === 'safe' ? 64 : 128,
+        ...inferenceSettings(profile),
         n_threads: 1, // GitHub PagesではCOOP/COEPを自由に設定できない。
         n_gpu_layers: useGpu ? 99 : 0,
         jinja: false,
@@ -149,7 +158,7 @@ export class TranslatorRuntime {
     try {
       return await run();
     } catch (firstError) {
-      if (!isLowLevelRuntimeError(firstError) || (this.activeBackend !== 'WebGPU' && this.profile === 'safe')) {
+      if (!isLowLevelRuntimeError(firstError) || IS_IOS || (this.activeBackend !== 'WebGPU' && this.profile === 'safe')) {
         throw new Error(explainRuntimeError(firstError));
       }
 

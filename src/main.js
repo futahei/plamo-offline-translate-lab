@@ -1,6 +1,6 @@
 import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
-import { TranslatorRuntime, MODEL, MODEL_REPO, detectWebGpu } from './engine.js';
+import { TranslatorRuntime, MODEL, MODEL_REPO, DEVICE_MODEL, IS_IOS, detectWebGpu } from './engine.js';
 import { parseGlossaryRows, TARGET_LANGUAGES } from './pfml3.js';
 
 const app = document.querySelector('#app');
@@ -46,10 +46,13 @@ app.innerHTML = `
     <main>
       <div class="page-heading"><h1>テキスト翻訳</h1><p>翻訳はこの端末内で処理されます</p></div>
 
+      <div class="update-notice" id="update-notice" hidden role="status"><span>新しいバージョンがあります</span><button type="button" id="apply-update">更新する</button></div>
+
       <section class="model-setup" id="setup-banner" aria-label="翻訳モデルの準備">
-        <div class="setup-copy"><strong id="model-status">モデルの準備が必要です</strong><span>初回は約${MODEL.sizeMB}MBのダウンロードが必要です</span></div>
+        <div class="setup-copy"><strong id="model-status">モデルの準備が必要です</strong><span>初回は約${DEVICE_MODEL.sizeMB}MBのダウンロードが必要です</span></div>
         <button type="button" class="setup-btn" id="load-btn">${icon('download', 17)} モデルを準備</button>
         <div class="progress-block" id="download-progress" hidden><div class="progress-info"><span id="progress-label">準備中…</span><span id="progress-percent">0%</span></div><div class="progress-track"><span id="progress-fill"></span></div></div>
+        <p class="recovery-note" id="recovery-note" hidden></p>
       </section>
 
       <section class="translator" aria-label="テキスト翻訳">
@@ -107,8 +110,29 @@ app.innerHTML = `
 `;
 
 const $ = (selector) => document.querySelector(selector);
-const state = { busy: false, swReady: false, gpuAvailable: false };
+const state = { busy: false, swReady: false, gpuAvailable: false, updateAvailable: false };
 let toastTimeout;
+let applyServiceWorkerUpdate = () => Promise.resolve();
+const LOAD_MARKER = 'karuyaku:ios-model-loading';
+
+function markModelLoad(active) {
+  if (!IS_IOS) return;
+  try {
+    if (active) sessionStorage.setItem(LOAD_MARKER, String(Date.now()));
+    else sessionStorage.removeItem(LOAD_MARKER);
+  } catch { /* プライベートモード等の保存領域制限 */ }
+}
+
+if (IS_IOS) {
+  try {
+    const interruptedAt = Number(sessionStorage.getItem(LOAD_MARKER));
+    sessionStorage.removeItem(LOAD_MARKER);
+    if (interruptedAt && Date.now() - interruptedAt < 20 * 60 * 1000) {
+      $('#recovery-note').textContent = '前回のモデル準備が途中で中断されました。iPhoneのメモリ制限などでページが終了した可能性があります。';
+      $('#recovery-note').hidden = false;
+    }
+  } catch { /* 保存領域が利用できなくても続行する */ }
+}
 
 const MAX_GLOSSARY_ITEMS = 50;
 
@@ -180,6 +204,7 @@ function toast(message, type = 'info') {
 
 function setBusy(value) {
   state.busy = value;
+  $('#apply-update').disabled = value;
   $('#load-btn').disabled = value;
   $('#translate-btn').disabled = value || !translator.instance?.isModelLoaded() || !$('#source-text').value.trim();
   for (const id of ['source-lang', 'target-lang']) {
@@ -217,7 +242,7 @@ function updateProgress({ loaded, total }) {
     const ratio = Math.min(100, Math.round((loaded / total) * 100));
     $('#progress-percent').textContent = `${ratio}%`;
     $('#progress-fill').style.width = `${ratio}%`;
-    $('#progress-label').textContent = `モデル取得 ${Math.round(loaded / 1e6)} / ${Math.round(total / 1e6)} MB`;
+    $('#progress-label').textContent = ratio === 100 ? 'モデル取得完了・起動中…' : `モデル取得 ${Math.round(loaded / 1e6)} / ${Math.round(total / 1e6)} MB`;
   } else {
     $('#progress-percent').textContent = '確認中';
     $('#progress-label').textContent = 'キャッシュ / ダウンロード確認中';
@@ -242,6 +267,7 @@ async function refreshModelCache() {
 
 $('#load-btn').addEventListener('click', async () => {
   if (state.busy) return;
+  markModelLoad(true);
   setBusy(true);
   setModelStatus('モデルを準備しています', 'loading');
   $('#load-btn').textContent = '準備中…';
@@ -262,6 +288,7 @@ $('#load-btn').addEventListener('click', async () => {
     toast('モデルを起動できませんでした。詳細設定からエラーを確認できます。', 'error');
     console.error(error);
   } finally {
+    markModelLoad(false);
     setBusy(false);
   }
 });
@@ -432,8 +459,12 @@ window.addEventListener('offline', setNetworkStatus);
 setNetworkStatus();
 
 if ('serviceWorker' in navigator) {
-  registerSW({
+  applyServiceWorkerUpdate = registerSW({
     immediate: true,
+    onNeedRefresh: () => {
+      state.updateAvailable = true;
+      $('#update-notice').hidden = false;
+    },
     onOfflineReady: () => {
       state.swReady = true;
       refreshCapabilities();
@@ -447,5 +478,10 @@ if ('serviceWorker' in navigator) {
     onRegisterError: (error) => console.warn('Service Workerを登録できませんでした', error),
   });
 }
+
+$('#apply-update').addEventListener('click', () => {
+  if (state.busy || !state.updateAvailable) return;
+  applyServiceWorkerUpdate(true);
+});
 
 Promise.all([refreshCapabilities(), refreshModelCache()]).catch(console.error);

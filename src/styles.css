@@ -68,6 +68,12 @@ main { width: min(100% - 6%, 1584px); margin: 0 auto; padding: 41px 0 48px; }
   border-radius: 14px;
   background: #edf4ff;
 }
+.update-notice { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; padding: 11px 16px; border: 1px solid #cddbec; border-radius: 11px; background: #f3f7fc; color: #334b6b; font-size: 13px; }
+.update-notice[hidden] { display: none; }
+.update-notice button { border: 1px solid #aec5e4; background: #fff; border-radius: 8px; padding: 7px 13px; color: var(--accent); font-weight: 700; white-space: nowrap; }
+.update-notice button:hover:not(:disabled) { background: #e8f0ff; }
+.update-notice button:disabled { opacity: .55; }
+.recovery-note { width: 100%; margin: 0; padding-top: 10px; border-top: 1px solid #c5d7f0; color: #855122; font-size: 12px; line-height: 1.6; }
 .setup-copy { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px 17px; min-width: 0; }
 .setup-copy strong { color: #18428f; font-size: 14px; }
 .setup-copy span { color: #536782; font-size: 12px; }
