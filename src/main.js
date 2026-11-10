@@ -2,6 +2,7 @@ import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
 import { TranslatorRuntime, MODEL, MODEL_REPO, IS_IOS, detectWebGpu } from './engine.js';
 import { parseGlossaryRows, TARGET_LANGUAGES } from './pfml3.js';
+import { pickSample } from './samples.js';
 
 const app = document.querySelector('#app');
 const translator = new TranslatorRuntime();
@@ -65,7 +66,7 @@ app.innerHTML = `
           <section class="translation-card source-card" aria-label="翻訳する文章">
             <label class="sr-only" for="source-text">翻訳する文章</label>
             <textarea id="source-text" maxlength="2000" spellcheck="true" placeholder="翻訳したい文章を入力してください">Small language models can run entirely in your browser. Your text stays on this device.</textarea>
-            <div class="source-footer"><span id="char-count">0文字</span><button class="icon-button clear-btn" id="clear-text" type="button" aria-label="入力を消去" title="入力を消去">${icon('close', 19)}</button></div>
+            <div class="source-footer"><button class="sample-btn" id="insert-sample" type="button" title="選択した言語の例文をランダムに入力">${icon('spark', 16)} 例文を入力</button><span id="char-count">0文字</span><button class="icon-button clear-btn" id="clear-text" type="button" aria-label="入力を消去" title="入力を消去">${icon('close', 19)}</button></div>
           </section>
           <button class="primary-btn translate-btn" id="translate-btn" type="button" disabled>翻訳する</button>
           <section class="translation-card result-card" aria-label="翻訳結果">
@@ -117,25 +118,28 @@ app.innerHTML = `
 `;
 
 const $ = (selector) => document.querySelector(selector);
-const state = { busy: false, swReady: false, gpuAvailable: false, updateAvailable: false };
+const state = { busy: false, swReady: false, modelCached: false, gpuAvailable: false, updateAvailable: false };
 let toastTimeout;
 let applyServiceWorkerUpdate = () => Promise.resolve();
 const LOAD_MARKER = 'karuyaku:ios-model-loading';
 
-function markModelLoad(active) {
+function markModelLoad(phase) {
   if (!IS_IOS) return;
   try {
-    if (active) sessionStorage.setItem(LOAD_MARKER, String(Date.now()));
+    if (phase) sessionStorage.setItem(LOAD_MARKER, JSON.stringify({ at: Date.now(), phase, model: translator.getSelectedModel().quantization }));
     else sessionStorage.removeItem(LOAD_MARKER);
   } catch { /* プライベートモード等の保存領域制限 */ }
 }
 
 if (IS_IOS) {
   try {
-    const interruptedAt = Number(sessionStorage.getItem(LOAD_MARKER));
+    const marker = sessionStorage.getItem(LOAD_MARKER);
     sessionStorage.removeItem(LOAD_MARKER);
-    if (interruptedAt && Date.now() - interruptedAt < 20 * 60 * 1000) {
-      $('#recovery-note').textContent = '前回のモデル準備が途中で中断されました。iPhoneのメモリ制限などでページが終了した可能性があります。';
+    const previous = marker?.startsWith('{') ? JSON.parse(marker) : { at: Number(marker), phase: 'unknown' };
+    if (previous?.at && Date.now() - previous.at < 20 * 60 * 1000) {
+      $('#recovery-note').textContent = previous.phase === 'start'
+        ? '前回はモデル起動中にページが終了しました。iPhoneのメモリ不足などが考えられます。保存済みモデルはそのまま残ります。'
+        : '前回はモデル取得中にページが終了しました。保存済みのファイルを確認して、残りを取得できます。';
       $('#recovery-note').hidden = false;
     }
   } catch { /* 保存領域が利用できなくても続行する */ }
@@ -218,6 +222,7 @@ function setBusy(value) {
     $('#' + id).disabled = value;
   }
   $('#swap-languages').disabled = value;
+  $('#insert-sample').disabled = value;
   document.querySelectorAll('input[name="ios-model"]').forEach((input) => { input.disabled = value; });
 }
 
@@ -231,7 +236,7 @@ function setModelStatus(message, status = 'neutral') {
 }
 
 function setNetworkStatus() {
-  const ready = Boolean(state.swReady && translator.instance?.isModelLoaded());
+  const ready = Boolean(state.swReady && (state.modelCached || translator.instance?.isModelLoaded()));
   const node = $('#network-chip');
   node.className = `network-chip ${ready ? 'ready' : (navigator.onLine ? '' : 'offline-not-ready')}`;
   $('#network-label').textContent = ready ? 'オフライン利用可能' : (navigator.onLine ? 'モデル準備中' : 'オフライン（未準備）');
@@ -250,7 +255,7 @@ function updateProgress({ loaded, total }) {
     const ratio = Math.min(100, Math.round((loaded / total) * 100));
     $('#progress-percent').textContent = `${ratio}%`;
     $('#progress-fill').style.width = `${ratio}%`;
-    $('#progress-label').textContent = ratio === 100 ? 'モデル取得完了・起動中…' : `モデル取得 ${Math.round(loaded / 1e6)} / ${Math.round(total / 1e6)} MB`;
+    $('#progress-label').textContent = ratio === 100 ? 'モデルを保存しています…' : `モデル取得 ${Math.round(loaded / 1e6)} / ${Math.round(total / 1e6)} MB`;
   } else {
     $('#progress-percent').textContent = '確認中';
     $('#progress-label').textContent = 'キャッシュ / ダウンロード確認中';
@@ -259,17 +264,24 @@ function updateProgress({ loaded, total }) {
 
 async function refreshModelCache() {
   try {
-    const cached = await translator.isCached();
-    if (cached && !translator.instance?.isModelLoaded()) {
+    const cache = await translator.modelCacheInfo();
+    state.modelCached = cache.complete;
+    if (cache.complete && !translator.instance?.isModelLoaded()) {
       setModelStatus('モデルは保存済みです', 'cached');
       $('#load-btn').innerHTML = `${icon('check')} モデルを起動`;
       $('.setup-copy span').textContent = 'ダウンロードせずに再利用できます';
     } else if (!translator.instance?.isModelLoaded()) {
-      setModelStatus('モデルの準備が必要です', 'neutral');
-      $('#load-btn').innerHTML = `${icon('download')} モデルを準備`;
-      $('.setup-copy span').textContent = `初回は約${translator.getSelectedModel().sizeMB}MBのダウンロードが必要です`;
+      const partial = cache.saved > 0;
+      setModelStatus(partial ? 'モデルの取得を再開できます' : 'モデルの準備が必要です', 'neutral');
+      $('#load-btn').innerHTML = `${icon('download')} ${partial ? '残りをダウンロード' : 'モデルを準備'}`;
+      $('.setup-copy span').textContent = partial
+        ? `${cache.saved} / ${cache.total}ファイル保存済み。残りを取得します`
+        : `初回は約${translator.getSelectedModel().sizeMB}MBのダウンロードが必要です`;
     }
   } catch (error) {
+    state.modelCached = false;
+    setModelStatus('保存領域を確認できません', 'error');
+    $('.setup-copy span').textContent = 'ブラウザの保存領域の設定・空き容量を確認してください';
     console.warn('モデルキャッシュを確認できません', error);
   }
 }
@@ -302,13 +314,26 @@ $('#load-btn').addEventListener('click', async () => {
   if (state.busy) return;
   // ブラウザが対応していれば、保存したモデルが自動削除されにくい領域を要求する。
   void navigator.storage?.persist?.().catch(() => false);
-  markModelLoad(true);
   setBusy(true);
   setModelStatus('モデルを準備しています', 'loading');
   $('#load-btn').textContent = '準備中…';
   $('#download-progress').hidden = true;
   $('#progress-fill').style.width = '0%';
   try {
+    if (IS_IOS && !(await translator.isCached())) {
+      markModelLoad('download');
+      setModelStatus('モデルをダウンロードしています', 'loading');
+      await translator.download({ onProgress: updateProgress });
+      state.modelCached = true;
+      setModelStatus('モデルを保存しました', 'cached');
+      $('.setup-copy span').textContent = '次に「モデルを起動」を押してください';
+      $('#load-btn').innerHTML = `${icon('check')} モデルを起動`;
+      $('#download-progress').hidden = true;
+      $('#recovery-note').hidden = true;
+      toast('モデルを保存しました', 'success');
+      return;
+    }
+    markModelLoad('start');
     const loaded = await translator.load({
       onProgress: updateProgress,
       onCacheStatus: (cached) => {
@@ -317,6 +342,7 @@ $('#load-btn').addEventListener('click', async () => {
       },
     });
     setModelStatus('モデルの準備が完了しました', 'ready');
+    state.modelCached = true;
     $('#backend-state').textContent = loaded.backend;
     $('#load-btn').innerHTML = `${icon('check')} 準備完了`;
     $('#download-progress').hidden = true;
@@ -330,7 +356,7 @@ $('#load-btn').addEventListener('click', async () => {
     toast('モデルを起動できませんでした。詳細設定からエラーを確認できます。', 'error');
     console.error(error);
   } finally {
-    markModelLoad(false);
+    markModelLoad(null);
     setBusy(false);
   }
 });
@@ -361,6 +387,16 @@ $('#source-lang').value = 'en';
 
 $('#clear-text').addEventListener('click', () => {
   $('#source-text').value = '';
+  $('#source-text').dispatchEvent(new Event('input'));
+  $('#source-text').focus();
+});
+
+$('#insert-sample').addEventListener('click', () => {
+  if (state.busy) return;
+  const source = $('#source-lang');
+  const example = pickSample(source.value, $('#target-lang').value, $('#source-text').value);
+  if (source.value === 'auto') source.value = example.language;
+  $('#source-text').value = example.text;
   $('#source-text').dispatchEvent(new Event('input'));
   $('#source-text').focus();
 });

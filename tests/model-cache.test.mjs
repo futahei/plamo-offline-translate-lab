@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cachedModelFileNames, modelShardUrls } from '../src/model-cache.js';
+import { cachedModelFileNames, modelShardUrls, modelCacheState } from '../src/model-cache.js';
 
 const q4 = 'https://example.com/models/plamo-3-translate-0.8b-Q4_0-00001-of-00003.gguf';
 const q2 = 'https://huggingface.co/example/Q2_K.gguf';
@@ -21,6 +21,9 @@ test('別モデルが未完了でも完全なQ2キャッシュは使える', () 
   const files = [entry(q2), entry(modelShardUrls(q4)[0])];
   assert.deepEqual(cachedModelFileNames(q2, files), [`saved:${q2}`]);
   assert.equal(cachedModelFileNames(q4, files), null);
+  assert.deepEqual(modelCacheState(q4, files), {
+    complete: false, saved: 1, total: 3, savedBytes: 123, names: [`saved:${modelShardUrls(q4)[0]}`],
+  });
 });
 
 test('分割ファイルのサイズ不一致ではキャッシュとみなさない', () => {

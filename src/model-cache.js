@@ -13,16 +13,22 @@ export function modelShardUrls(firstUrl) {
     `${prefix}-${String(i + 1).padStart(5, '0')}-of-${match[2]}.gguf${suffix}`);
 }
 
-export function cachedModelFileNames(modelUrl, files) {
+export function modelCacheState(modelUrl, files) {
   const urls = modelShardUrls(modelUrl);
-  if (!urls.length) return null;
-
+  if (!urls.length) return { complete: false, saved: 0, total: 0, savedBytes: 0, names: [] };
   const cached = new Map(files.map((file) => [file.metadata?.originalURL, file]));
   const names = [];
+  let savedBytes = 0;
   for (const url of urls) {
     const file = cached.get(url);
-    if (!file || !file.name || file.size <= 0 || file.metadata?.originalSize !== file.size) return null;
+    if (!file || !file.name || file.size <= 0 || file.metadata?.originalSize !== file.size) continue;
     names.push(file.name);
+    savedBytes += file.size;
   }
-  return names;
+  return { complete: names.length === urls.length, saved: names.length, total: urls.length, savedBytes, names };
+}
+
+export function cachedModelFileNames(modelUrl, files) {
+  const state = modelCacheState(modelUrl, files);
+  return state.complete ? state.names : null;
 }

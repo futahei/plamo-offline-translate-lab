@@ -2,7 +2,7 @@ import { buildTranslationPrompt, cleanTranslation } from './pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from './runtime-errors.js';
 import { inferenceSettings, isIOSDevice, IOS_MODEL_PREFERENCE_KEY, preferredIOSModelMode } from './device-profile.js';
 import { firstQ4ShardFilename } from './model-shards.js';
-import { cachedModelFileNames } from './model-cache.js';
+import { cachedModelFileNames, modelCacheState } from './model-cache.js';
 
 export const MODEL_REPO = 'pfnet/plamo-3-translate-0.8b-GGUF';
 export const MODEL = Object.freeze({
@@ -51,6 +51,8 @@ async function makeRuntime() {
     allowOffline: true,
     suppressNativeLog: false,
     logger: LoggerWithoutDebug,
+    // WebKitのピークメモリを抑えるため、iPhoneはGGUF分割を1本ずつ保存。
+    parallelDownloads: IS_IOS ? 1 : 3,
   });
   wllama.setCompat({
     wasm: assetUrl('wllama-compat.wasm'),
@@ -106,13 +108,23 @@ export class TranslatorRuntime {
     return modelAssetUrl(filename);
   }
 
+  async modelCacheInfo() {
+    const selectedUrl = await this.selectedModelUrl();
+    const runtime = this.instance || await makeRuntime();
+    const cachedFiles = await runtime.cacheManager.list();
+    const selected = modelCacheState(selectedUrl, cachedFiles);
+    if (selected.complete) return { ...selected, url: selectedUrl };
+    if (!IS_IOS) {
+      const legacy = modelCacheState(PREVIOUS_MODEL_URL, cachedFiles);
+      if (legacy.complete) return { ...legacy, url: PREVIOUS_MODEL_URL };
+    }
+    return { ...selected, url: selectedUrl };
+  }
+
   async cachedModelUrl() {
     try {
-      const selectedUrl = await this.selectedModelUrl();
-      const runtime = this.instance || await makeRuntime();
-      const cachedFiles = await runtime.cacheManager.list();
-      if (cachedModelFileNames(selectedUrl, cachedFiles)) return selectedUrl;
-      if (!IS_IOS && cachedModelFileNames(PREVIOUS_MODEL_URL, cachedFiles)) return PREVIOUS_MODEL_URL;
+      const status = await this.modelCacheInfo();
+      return status.complete ? status.url : null;
     } catch (error) {
       console.warn('モデルのキャッシュを確認できなかったっス', error);
     }
@@ -121,6 +133,24 @@ export class TranslatorRuntime {
 
   async isCached() {
     return Boolean(await this.cachedModelUrl());
+  }
+
+  async download({ onProgress = () => {} } = {}) {
+    const state = await this.modelCacheInfo();
+    if (state.complete) return { fromCache: true, state };
+
+    // iOSでは取得とWASM起動を分離し、取得完了直後のピークメモリを避ける。
+    const runtime = await makeRuntime();
+    await runtime.modelManager.downloadModel(state.url, {
+      progressCallback: ({ loaded, total }) => onProgress({
+        loaded: total > 0 ? Math.min(total, loaded + state.savedBytes) : loaded,
+        total,
+        resumed: state.saved > 0,
+      }),
+    });
+    const verified = await this.modelCacheInfo();
+    if (!verified.complete) throw new Error('モデルの保存が完了していません。もう一度「モデルを準備」を押してください。');
+    return { fromCache: false, state: verified };
   }
 
   async load({ backend = 'auto', profile = IS_IOS ? 'mobile' : 'normal', onProgress = () => {}, onCacheStatus = () => {} } = {}) {
@@ -144,6 +174,9 @@ export class TranslatorRuntime {
       const cachedBlobs = cachedNames ? await Promise.all(cachedNames.map((name) => wllama.cacheManager.open(name))) : null;
       const fromCache = Boolean(cachedBlobs?.every((blob) => blob && blob.size > 0));
       onCacheStatus(fromCache);
+      if (IS_IOS && !fromCache) {
+        throw new Error('保存済みモデルを確認できません。先にモデルをダウンロードしてください。');
+      }
       const settings = {
         ...inferenceSettings(profile),
         n_threads: 1, // GitHub PagesではCOOP/COEPを自由に設定できない。

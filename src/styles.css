@@ -109,6 +109,9 @@ main { width: min(100% - 6%, 1584px); margin: 0 auto; padding: 41px 0 48px; }
 .source-card textarea::placeholder { color: #a3adbe; }
 .source-footer, .result-footer { position: absolute; right: 24px; bottom: 24px; display: flex; align-items: center; gap: 13px; }
 .source-footer { color: #77839a; font-size: 13px; }
+.sample-btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 10px; border: 1px solid #d2dff2; border-radius: 8px; background: #f4f8ff; color: #2861bb; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.sample-btn:hover:not(:disabled) { background: #e9f1ff; border-color: #b6cbed; }
+.sample-btn:disabled { opacity: .45; }
 .primary-btn {
   display: inline-flex; align-items: center; justify-content: center; min-width: 184px; min-height: 57px;
   padding: 12px 24px; border: 0; border-radius: 12px; background: var(--accent); color: #fff;
@@ -217,6 +220,8 @@ main { width: min(100% - 6%, 1584px); margin: 0 auto; padding: 41px 0 48px; }
   .source-card textarea { min-height: 232px; padding: 22px 20px 58px; font-size: 18px; line-height: 1.54; }
   .translation-result { min-height: 233px; padding: 23px 21px 60px; font-size: 18px; line-height: 1.6; }
   .source-footer, .result-footer { right: 13px; bottom: 12px; }
+  .source-footer { gap: 8px; }
+  .sample-btn { padding: 7px 8px; font-size: 11px; }
   .translate-btn { position: static; width: 100%; min-height: 53px; margin: 13px 0; font-size: 18px; border-radius: 13px; }
   .tools { margin-top: 14px; border-radius: 16px; }
   .tools-bar { flex-wrap: wrap; gap: 2px; padding: 9px 13px; min-height: 0; }
