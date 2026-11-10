@@ -1,7 +1,8 @@
 import { buildTranslationPrompt, cleanTranslation } from './pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from './runtime-errors.js';
-import { inferenceSettings, isIOSDevice } from './device-profile.js';
+import { inferenceSettings, isIOSDevice, IOS_MODEL_PREFERENCE_KEY, preferredIOSModelMode } from './device-profile.js';
 import { firstQ4ShardFilename } from './model-shards.js';
+import { cachedModelFileNames } from './model-cache.js';
 
 export const MODEL_REPO = 'pfnet/plamo-3-translate-0.8b-GGUF';
 export const MODEL = Object.freeze({
@@ -19,8 +20,9 @@ const IOS_MODEL = Object.freeze({
 });
 export const IOS_EXPERIMENTAL_MODEL = MODEL;
 export const IS_IOS = isIOSDevice(typeof navigator === 'undefined' ? {} : navigator);
-export const DEVICE_MODEL = IS_IOS ? IOS_MODEL : MODEL;
+export const DEVICE_MODEL = MODEL;
 export const MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/${DEVICE_MODEL.file}`;
+const IOS_LIGHT_MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/${IOS_MODEL.file}`;
 const PREVIOUS_MODEL_URL = `https://huggingface.co/${MODEL_REPO}/resolve/main/plamo-3-translate-0.8b-Q4_K_M.gguf`;
 const modelAssetUrl = (filename) => new URL(`${import.meta.env.BASE_URL}models/${filename}`, document.baseURI).href;
 
@@ -57,6 +59,15 @@ async function makeRuntime() {
   return wllama;
 }
 
+function initialIOSModelMode() {
+  if (!IS_IOS) return 'experimental-q4';
+  try {
+    return preferredIOSModelMode(localStorage.getItem(IOS_MODEL_PREFERENCE_KEY));
+  } catch {
+    return preferredIOSModelMode(null);
+  }
+}
+
 export async function detectWebGpu() {
   if (!navigator.gpu?.requestAdapter) return false;
   try {
@@ -70,10 +81,10 @@ export class TranslatorRuntime {
   instance = null;
   activeBackend = null;
   profile = null;
-  iosModelMode = 'stable';
+  iosModelMode = initialIOSModelMode();
 
   getSelectedModel() {
-    return IS_IOS && this.iosModelMode === 'experimental-q4' ? IOS_EXPERIMENTAL_MODEL : DEVICE_MODEL;
+    return IS_IOS && this.iosModelMode === 'stable' ? IOS_MODEL : DEVICE_MODEL;
   }
 
   async setIOSModelMode(mode) {
@@ -81,12 +92,16 @@ export class TranslatorRuntime {
     if (this.iosModelMode === mode) return;
     await this.unload();
     this.iosModelMode = mode;
+    try {
+      localStorage.setItem(IOS_MODEL_PREFERENCE_KEY, mode);
+    } catch { /* 保存できない環境では現在のタブ内だけで選択を保持する */ }
   }
 
   async selectedModelUrl() {
-    if (!IS_IOS || this.iosModelMode === 'stable') return MODEL_URL;
+    if (!IS_IOS) return MODEL_URL;
+    if (this.iosModelMode === 'stable') return IOS_LIGHT_MODEL_URL;
     const response = await fetch(modelAssetUrl('q4-manifest.json'));
-    if (!response.ok) throw new Error(`Q4_0実験モデルの配布情報を取得できません (HTTP ${response.status})`);
+    if (!response.ok) throw new Error(`Q4_0モデルの配布情報を取得できません (HTTP ${response.status})`);
     const filename = firstQ4ShardFilename(await response.json());
     return modelAssetUrl(filename);
   }
@@ -95,10 +110,9 @@ export class TranslatorRuntime {
     try {
       const selectedUrl = await this.selectedModelUrl();
       const runtime = this.instance || await makeRuntime();
-      const cached = await runtime.modelManager.getModels();
-      if (cached.some((model) => model.url === selectedUrl && model.size > 0)) return selectedUrl;
-      // iOSでは従来の大きなモデルを再利用せず、小型Q2_Kのみを使う。
-      if (!IS_IOS && cached.some((model) => model.url === PREVIOUS_MODEL_URL && model.size > 0)) return PREVIOUS_MODEL_URL;
+      const cachedFiles = await runtime.cacheManager.list();
+      if (cachedModelFileNames(selectedUrl, cachedFiles)) return selectedUrl;
+      if (!IS_IOS && cachedModelFileNames(PREVIOUS_MODEL_URL, cachedFiles)) return PREVIOUS_MODEL_URL;
     } catch (error) {
       console.warn('モデルのキャッシュを確認できなかったっス', error);
     }
@@ -109,7 +123,7 @@ export class TranslatorRuntime {
     return Boolean(await this.cachedModelUrl());
   }
 
-  async load({ backend = 'auto', profile = IS_IOS ? 'mobile' : 'normal', onProgress = () => {} } = {}) {
+  async load({ backend = 'auto', profile = IS_IOS ? 'mobile' : 'normal', onProgress = () => {}, onCacheStatus = () => {} } = {}) {
     if (this.instance) {
       await this.instance.exit().catch(() => {});
       this.instance = null;
@@ -126,17 +140,28 @@ export class TranslatorRuntime {
     const attempt = async (useGpu) => {
       const wllama = await makeRuntime();
       this.instance = wllama;
-      await wllama.loadModelFromUrl(modelUrl, {
+      const cachedNames = cachedModelFileNames(modelUrl, await wllama.cacheManager.list());
+      const cachedBlobs = cachedNames ? await Promise.all(cachedNames.map((name) => wllama.cacheManager.open(name))) : null;
+      const fromCache = Boolean(cachedBlobs?.every((blob) => blob && blob.size > 0));
+      onCacheStatus(fromCache);
+      const settings = {
         ...inferenceSettings(profile),
         n_threads: 1, // GitHub PagesではCOOP/COEPを自由に設定できない。
         n_gpu_layers: useGpu ? 99 : 0,
         jinja: false,
-        useCache: true,
-        progressCallback: ({ loaded, total }) => onProgress({ loaded, total }),
-      });
+      };
+      if (fromCache) {
+        // 保存済みBlobを直接読む。切り替え時の再取得や「100%ダウンロード」表示を防ぐ。
+        await wllama.loadModel(cachedBlobs, settings);
+      } else {
+        const downloaded = await wllama.modelManager.downloadModel(modelUrl, {
+          progressCallback: ({ loaded, total }) => onProgress({ loaded, total }),
+        });
+        await wllama.loadModel(downloaded, settings);
+      }
       this.activeBackend = useGpu ? 'WebGPU' : 'CPU / WASM';
       this.profile = profile;
-      return { backend: this.activeBackend, profile, context: wllama.getLoadedContextInfo() };
+      return { backend: this.activeBackend, profile, fromCache, context: wllama.getLoadedContextInfo() };
     };
 
     try {

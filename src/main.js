@@ -1,6 +1,6 @@
 import './styles.css';
 import { registerSW } from 'virtual:pwa-register';
-import { TranslatorRuntime, MODEL, MODEL_REPO, DEVICE_MODEL, IS_IOS, detectWebGpu } from './engine.js';
+import { TranslatorRuntime, MODEL, MODEL_REPO, IS_IOS, detectWebGpu } from './engine.js';
 import { parseGlossaryRows, TARGET_LANGUAGES } from './pfml3.js';
 
 const app = document.querySelector('#app');
@@ -49,7 +49,7 @@ app.innerHTML = `
       <div class="update-notice" id="update-notice" hidden role="status"><span>新しいバージョンがあります</span><button type="button" id="apply-update">更新する</button></div>
 
       <section class="model-setup" id="setup-banner" aria-label="翻訳モデルの準備">
-        <div class="setup-copy"><strong id="model-status">モデルの準備が必要です</strong><span>初回は約${DEVICE_MODEL.sizeMB}MBのダウンロードが必要です</span></div>
+        <div class="setup-copy"><strong id="model-status">モデルの準備が必要です</strong><span>初回は約${translator.getSelectedModel().sizeMB}MBのダウンロードが必要です</span></div>
         <button type="button" class="setup-btn" id="load-btn">${icon('download', 17)} モデルを準備</button>
         <div class="progress-block" id="download-progress" hidden><div class="progress-info"><span id="progress-label">準備中…</span><span id="progress-percent">0%</span></div><div class="progress-track"><span id="progress-fill"></span></div></div>
         <p class="recovery-note" id="recovery-note" hidden></p>
@@ -98,12 +98,12 @@ app.innerHTML = `
           </div>
           ${IS_IOS ? `
             <fieldset class="mobile-model-options" id="mobile-model-options">
-              <legend>iPhoneモデル（実験）</legend>
-              <label class="model-option"><input type="radio" name="ios-model" value="stable" checked><span><strong>標準 · Q2_K</strong><small>約410MB · メモリ節約</small></span></label>
-              <label class="model-option"><input type="radio" name="ios-model" value="experimental-q4"><span><strong>高精度 · Q4_0</strong><small>約550MB · GGUF分割読み込み</small></span><span class="experimental-badge">実験</span></label>
-              <p class="model-option-note">Q4_0はブラウザのメモリ制限で終了する可能性があります。分割しても推論時の使用メモリは減りません。再読み込み後は標準のQ2_Kに戻ります。</p>
+              <legend>iPhoneモデル</legend>
+              <label class="model-option"><input type="radio" name="ios-model" value="experimental-q4" ${translator.iosModelMode === 'experimental-q4' ? 'checked' : ''}><span><strong>標準 · Q4_0</strong><small>約550MB · 高精度</small></span></label>
+              <label class="model-option"><input type="radio" name="ios-model" value="stable" ${translator.iosModelMode === 'stable' ? 'checked' : ''}><span><strong>省メモリ · Q2_K</strong><small>約410MB · メモリ節約</small></span></label>
+              <p class="model-option-note">モデルごとに初回のみダウンロードし、保存済みなら再利用します。端末の空き容量不足などにより再取得が必要になる場合があります。</p>
             </fieldset>` : ''}
-          <div class="technical-status"><span>量子化 <strong id="quantization-state">${DEVICE_MODEL.quantization}</strong></span><span>実行方式 <strong id="backend-state">未起動</strong></span><span>WebGPU <strong id="gpu-state">確認中</strong></span><span>オフライン用キャッシュ <strong id="pwa-state">確認中</strong></span></div>
+          <div class="technical-status"><span>量子化 <strong id="quantization-state">${translator.getSelectedModel().quantization}</strong></span><span>実行方式 <strong id="backend-state">未起動</strong></span><span>WebGPU <strong id="gpu-state">確認中</strong></span><span>オフライン用キャッシュ <strong id="pwa-state">確認中</strong></span></div>
           <div class="metrics"><div><span>推論時間</span><strong id="metric-time">—</strong></div><div><span>出力トークン</span><strong id="metric-tokens">—</strong></div><div><span>生成速度</span><strong id="metric-speed">—</strong></div></div>
           <div class="history-header"><h2>実験ログ</h2><button type="button" id="export-log" class="outline-btn" disabled>CSVで保存</button></div>
           <table class="log-table"><thead><tr><th>回</th><th>量子化</th><th>時間</th><th>速度</th></tr></thead><tbody id="history-list"><tr><td colspan="4" class="muted-cell">まだ記録がありません</td></tr></tbody></table>
@@ -300,13 +300,22 @@ if (IS_IOS) {
 
 $('#load-btn').addEventListener('click', async () => {
   if (state.busy) return;
+  // ブラウザが対応していれば、保存したモデルが自動削除されにくい領域を要求する。
+  void navigator.storage?.persist?.().catch(() => false);
   markModelLoad(true);
   setBusy(true);
   setModelStatus('モデルを準備しています', 'loading');
   $('#load-btn').textContent = '準備中…';
+  $('#download-progress').hidden = true;
   $('#progress-fill').style.width = '0%';
   try {
-    const loaded = await translator.load({ onProgress: updateProgress });
+    const loaded = await translator.load({
+      onProgress: updateProgress,
+      onCacheStatus: (cached) => {
+        setModelStatus(cached ? '保存済みモデルを起動しています' : 'モデルをダウンロードしています', 'loading');
+        if (cached) $('#download-progress').hidden = true;
+      },
+    });
     setModelStatus('モデルの準備が完了しました', 'ready');
     $('#backend-state').textContent = loaded.backend;
     $('#load-btn').innerHTML = `${icon('check')} 準備完了`;
