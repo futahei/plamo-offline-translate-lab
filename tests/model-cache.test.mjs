@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cachedModelFileNames, modelShardUrls, modelCacheState } from '../src/model-cache.js';
+import { cachedModelFileNames, modelShardUrls, modelCacheState, openCachedBlobsSequentially } from '../src/model-cache.js';
 
 const q4 = 'https://example.com/models/plamo-3-translate-0.8b-Q4_0-00001-of-00003.gguf';
 const q2 = 'https://huggingface.co/example/Q2_K.gguf';
@@ -35,4 +35,13 @@ test('分割ファイルのサイズ不一致ではキャッシュとみなさ�
 test('未知の分割番号や欠損は誤認しない', () => {
   assert.deepEqual(modelShardUrls('https://example.com/Q4-00002-of-00003.gguf'), []);
   assert.equal(cachedModelFileNames(q2, []), null);
+});
+
+test('キャッシュから分割Blobを順番に開き、欠損時は起動させない', async () => {
+  const calls = [];
+  const manager = { async open(name) { calls.push(name); return new Blob([name]); } };
+  const blobs = await openCachedBlobsSequentially(manager, ['one', 'two', 'three']);
+  assert.deepEqual(calls, ['one', 'two', 'three']);
+  assert.equal(blobs.length, 3);
+  assert.equal(await openCachedBlobsSequentially({ open: async () => null }, ['missing']), null);
 });

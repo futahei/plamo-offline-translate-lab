@@ -3,6 +3,7 @@ import { registerSW } from 'virtual:pwa-register';
 import { TranslatorRuntime, MODEL, MODEL_REPO, IS_IOS, detectWebGpu } from './engine.js';
 import { parseGlossaryRows, TARGET_LANGUAGES } from './pfml3.js';
 import { pickSample } from './samples.js';
+import { addStartupEvent, readStartupEvents, previousStartupStage } from './startup-diagnostics.js';
 
 const app = document.querySelector('#app');
 const translator = new TranslatorRuntime();
@@ -103,7 +104,18 @@ app.innerHTML = `
               <label class="model-option"><input type="radio" name="ios-model" value="experimental-q4" ${translator.iosModelMode === 'experimental-q4' ? 'checked' : ''}><span><strong>標準 · Q4_0</strong><small>約550MB · 高精度</small></span></label>
               <label class="model-option"><input type="radio" name="ios-model" value="stable" ${translator.iosModelMode === 'stable' ? 'checked' : ''}><span><strong>省メモリ · Q2_K</strong><small>約410MB · メモリ節約</small></span></label>
               <p class="model-option-note">モデルごとに初回のみダウンロードし、保存済みなら再利用します。端末の空き容量不足などにより再取得が必要になる場合があります。</p>
-            </fieldset>` : ''}
+            </fieldset>
+            <fieldset class="mobile-model-options" id="mobile-memory-options">
+              <legend>起動時メモリ設定（実験）</legend>
+              <label class="model-option"><input type="radio" name="ios-memory" value="normal" ${translator.iosMemoryMode === 'normal' ? 'checked' : ''}><span><strong>通常</strong><small>コンテキスト512 / バッチ32</small></span></label>
+              <label class="model-option"><input type="radio" name="ios-memory" value="low" ${translator.iosMemoryMode === 'low' ? 'checked' : ''}><span><strong>省メモリ実験</strong><small>コンテキスト384 / バッチ16（Q4_0モデルは変更なし）</small></span></label>
+              <p class="model-option-note">同じモデルを再利用します。長い文章は入力可能量が減る場合があります。変更後はモデルを再起動します。</p>
+            </fieldset>
+            <details class="startup-diagnostics"><summary>起動診断ログ</summary>
+              <p class="field-help">端末内に起動処理の段階を記録します。メモリ使用量はブラウザが公開している場合のみ記録します。翻訳文は保存しません。</p>
+              <p id="startup-diagnostics-summary" class="model-option-note"></p>
+              <button type="button" id="copy-startup-log" class="outline-btn">診断ログをコピー</button>
+            </details>` : ''}
           <div class="technical-status"><span>量子化 <strong id="quantization-state">${translator.getSelectedModel().quantization}</strong></span><span>実行方式 <strong id="backend-state">未起動</strong></span><span>WebGPU <strong id="gpu-state">確認中</strong></span><span>オフライン用キャッシュ <strong id="pwa-state">確認中</strong></span></div>
           <div class="metrics"><div><span>推論時間</span><strong id="metric-time">—</strong></div><div><span>出力トークン</span><strong id="metric-tokens">—</strong></div><div><span>生成速度</span><strong id="metric-speed">—</strong></div></div>
           <div class="history-header"><h2>実験ログ</h2><button type="button" id="export-log" class="outline-btn" disabled>CSVで保存</button></div>
@@ -122,6 +134,48 @@ const state = { busy: false, swReady: false, modelCached: false, gpuAvailable: f
 let toastTimeout;
 let applyServiceWorkerUpdate = () => Promise.resolve();
 const LOAD_MARKER = 'karuyaku:ios-model-loading';
+const diagnosticStorage = (() => { try { return localStorage; } catch { return null; } })();
+const previousStartup = previousStartupStage(readStartupEvents(diagnosticStorage));
+const navigationType = performance.getEntriesByType?.('navigation')?.[0]?.type || 'unknown';
+let startupStartedAt = 0;
+
+function recordStartup(phase, details = {}) {
+  if (!IS_IOS) return;
+  const heapBytes = performance.memory?.usedJSHeapSize;
+  addStartupEvent(diagnosticStorage, {
+    at: new Date().toISOString(), phase,
+    model: translator.getSelectedModel().quantization,
+    memoryMode: translator.iosMemoryMode,
+    elapsedMs: startupStartedAt ? Math.round(performance.now() - startupStartedAt) : null,
+    jsHeapMB: Number.isFinite(heapBytes) ? Math.round(heapBytes / 1e6) : null,
+    ...details,
+  });
+}
+
+if (IS_IOS) {
+  recordStartup('page-open', { navigationType, wasDiscarded: Boolean(document.wasDiscarded) });
+  const previousAt = Date.parse(previousStartup?.at || '');
+  if (previousStartup && Number.isFinite(previousAt) && Date.now() - previousAt < 5 * 60 * 1000 &&
+      ['model-loaded', 'model-ready', 'wasm-loading'].includes(previousStartup.phase)) {
+    $('#startup-diagnostics-summary').textContent =
+      `前回の最終記録: ${previousStartup.phase}。ページが再読み込みされた可能性があります（原因は未確定）。`;
+  } else {
+    $('#startup-diagnostics-summary').textContent = 'モデル起動時の記録を確認できます。';
+  }
+  $('#copy-startup-log').addEventListener('click', async () => {
+    const payload = JSON.stringify({
+      browser: navigator.userAgent,
+      navigationType,
+      events: readStartupEvents(diagnosticStorage),
+    }, null, 2);
+    try {
+      await navigator.clipboard.writeText(payload);
+      toast('診断ログをコピーしました', 'success');
+    } catch {
+      $('#startup-diagnostics-summary').textContent = 'コピーできませんでした。Safariの共有・クリップボード権限を確認してください。';
+    }
+  });
+}
 
 function markModelLoad(phase) {
   if (!IS_IOS) return;
@@ -224,6 +278,7 @@ function setBusy(value) {
   $('#swap-languages').disabled = value;
   $('#insert-sample').disabled = value;
   document.querySelectorAll('input[name="ios-model"]').forEach((input) => { input.disabled = value; });
+  document.querySelectorAll('input[name="ios-memory"]').forEach((input) => { input.disabled = value; });
 }
 
 function setModelStatus(message, status = 'neutral') {
@@ -308,10 +363,30 @@ if (IS_IOS) {
       }
     });
   });
+  document.querySelectorAll('input[name="ios-memory"]').forEach((input) => {
+    input.addEventListener('change', async () => {
+      if (!input.checked || state.busy) return;
+      setBusy(true);
+      try {
+        await translator.setIOSMemoryMode(input.value);
+        recordStartup('memory-setting-changed');
+        setModelStatus('起動時メモリ設定を変更しました', 'cached');
+        await refreshModelCache();
+      } catch (error) {
+        $('#runtime-error').textContent = cleanError(error);
+        $('#runtime-error').hidden = false;
+        toast('メモリ設定を変更できませんでした', 'error');
+      } finally {
+        setBusy(false);
+      }
+    });
+  });
 }
 
 $('#load-btn').addEventListener('click', async () => {
   if (state.busy) return;
+  startupStartedAt = performance.now();
+  recordStartup('load-request');
   // ブラウザが対応していれば、保存したモデルが自動削除されにくい領域を要求する。
   void navigator.storage?.persist?.().catch(() => false);
   setBusy(true);
@@ -321,9 +396,11 @@ $('#load-btn').addEventListener('click', async () => {
   $('#progress-fill').style.width = '0%';
   try {
     if (IS_IOS && !(await translator.isCached())) {
+      recordStartup('download-start');
       markModelLoad('download');
       setModelStatus('モデルをダウンロードしています', 'loading');
       await translator.download({ onProgress: updateProgress });
+      recordStartup('download-completed');
       state.modelCached = true;
       setModelStatus('モデルを保存しました', 'cached');
       $('.setup-copy span').textContent = '次に「モデルを起動」を押してください';
@@ -336,12 +413,14 @@ $('#load-btn').addEventListener('click', async () => {
     markModelLoad('start');
     const loaded = await translator.load({
       onProgress: updateProgress,
+      onStage: (phase) => recordStartup(phase),
       onCacheStatus: (cached) => {
         setModelStatus(cached ? '保存済みモデルを起動しています' : 'モデルをダウンロードしています', 'loading');
         if (cached) $('#download-progress').hidden = true;
       },
     });
     setModelStatus('モデルの準備が完了しました', 'ready');
+    recordStartup('model-ready', { backend: loaded.backend, profile: loaded.profile });
     state.modelCached = true;
     $('#backend-state').textContent = loaded.backend;
     $('#load-btn').innerHTML = `${icon('check')} 準備完了`;
@@ -349,6 +428,7 @@ $('#load-btn').addEventListener('click', async () => {
     $('#runtime-error').hidden = true;
     toast('モデルの準備が完了しました', 'success');
   } catch (error) {
+    recordStartup('load-failed', { error: cleanError(error).slice(0, 240) });
     setModelStatus('モデルの準備に失敗しました', 'error');
     $('#load-btn').innerHTML = `${icon('refresh')} 再試行`;
     $('#runtime-error').textContent = cleanError(error);

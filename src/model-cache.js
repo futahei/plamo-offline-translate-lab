@@ -32,3 +32,14 @@ export function cachedModelFileNames(modelUrl, files) {
   const state = modelCacheState(modelUrl, files);
   return state.complete ? state.names : null;
 }
+
+export async function openCachedBlobsSequentially(cacheManager, names) {
+  if (!names) return null;
+  const blobs = [];
+  for (const name of names) {
+    const blob = await cacheManager.open(name);
+    if (!blob || !blob.size) return null;
+    blobs.push(blob);
+  }
+  return blobs;
+}

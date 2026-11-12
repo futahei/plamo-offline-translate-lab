@@ -172,6 +172,9 @@ main { width: min(100% - 6%, 1584px); margin: 0 auto; padding: 41px 0 48px; }
 .model-option small { color: var(--muted); font-size: 11px; }
 .experimental-badge { margin-left: auto; padding: 3px 7px; color: #7c5012; background: #fff0d5; border-radius: 5px; font-size: 10px; font-weight: 700; }
 .model-option-note { margin: 8px 0 0; color: var(--muted); font-size: 11px; line-height: 1.7; }
+.startup-diagnostics { margin-top: 18px; padding: 12px 16px; border: 1px solid #dbe5f2; border-radius: 11px; background: #fbfcff; }
+.startup-diagnostics summary { cursor: pointer; color: #32445f; font-size: 13px; font-weight: 700; }
+.startup-diagnostics .outline-btn { margin-top: 12px; }
 .technical-status { display: flex; flex-wrap: wrap; gap: 13px 30px; margin-top: 24px; color: var(--muted); font-size: 12px; }
 .technical-status strong { color: #1f304b; font-weight: 700; }
 .metrics { display: flex; flex-wrap: wrap; gap: 30px; margin-top: 21px; }

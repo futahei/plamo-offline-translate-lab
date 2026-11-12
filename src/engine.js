@@ -1,8 +1,8 @@
 import { buildTranslationPrompt, cleanTranslation } from './pfml3.js';
 import { explainRuntimeError, isLowLevelRuntimeError } from './runtime-errors.js';
-import { inferenceSettings, isIOSDevice, IOS_MODEL_PREFERENCE_KEY, preferredIOSModelMode } from './device-profile.js';
+import { inferenceSettings, isIOSDevice, IOS_MODEL_PREFERENCE_KEY, IOS_MEMORY_PREFERENCE_KEY, preferredIOSModelMode, preferredIOSMemoryMode } from './device-profile.js';
 import { firstQ4ShardFilename, q4ShardSizes } from './model-shards.js';
-import { cachedModelFileNames, modelCacheState, modelShardUrls } from './model-cache.js';
+import { cachedModelFileNames, modelCacheState, modelShardUrls, openCachedBlobsSequentially } from './model-cache.js';
 
 export const MODEL_REPO = 'pfnet/plamo-3-translate-0.8b-GGUF';
 export const MODEL = Object.freeze({
@@ -84,6 +84,15 @@ function initialIOSModelMode() {
   }
 }
 
+function initialIOSMemoryMode() {
+  if (!IS_IOS) return 'normal';
+  try {
+    return preferredIOSMemoryMode(localStorage.getItem(IOS_MEMORY_PREFERENCE_KEY));
+  } catch {
+    return 'normal';
+  }
+}
+
 export async function detectWebGpu() {
   if (!navigator.gpu?.requestAdapter) return false;
   try {
@@ -98,6 +107,7 @@ export class TranslatorRuntime {
   activeBackend = null;
   profile = null;
   iosModelMode = initialIOSModelMode();
+  iosMemoryMode = initialIOSMemoryMode();
 
   getSelectedModel() {
     return IS_IOS && this.iosModelMode === 'stable' ? IOS_MODEL : DEVICE_MODEL;
@@ -111,6 +121,15 @@ export class TranslatorRuntime {
     try {
       localStorage.setItem(IOS_MODEL_PREFERENCE_KEY, mode);
     } catch { /* 保存できない環境では現在のタブ内だけで選択を保持する */ }
+  }
+
+  async setIOSMemoryMode(mode) {
+    if (!IS_IOS || !['normal', 'low'].includes(mode) || this.iosMemoryMode === mode) return;
+    await this.unload();
+    this.iosMemoryMode = mode;
+    try {
+      localStorage.setItem(IOS_MEMORY_PREFERENCE_KEY, mode);
+    } catch { /* 保存できない端末では現在のタブ内のみ有効 */ }
   }
 
   async selectedModelUrl() {
@@ -189,7 +208,7 @@ export class TranslatorRuntime {
     return { fromCache: false, state: verified };
   }
 
-  async load({ backend = 'auto', profile = IS_IOS ? 'mobile' : 'normal', onProgress = () => {}, onCacheStatus = () => {} } = {}) {
+  async load({ backend = 'auto', profile = IS_IOS ? (this.iosMemoryMode === 'low' ? 'mobile-lowmem' : 'mobile') : 'normal', onProgress = () => {}, onCacheStatus = () => {}, onStage = () => {} } = {}) {
     if (this.instance) {
       await this.instance.exit().catch(() => {});
       this.instance = null;
@@ -204,10 +223,13 @@ export class TranslatorRuntime {
     const modelUrl = (await this.cachedModelUrl()) || await this.selectedModelUrl();
 
     const attempt = async (useGpu) => {
+      onStage('runtime-created');
       const wllama = await makeRuntime();
       this.instance = wllama;
+      onStage('cache-opening');
       const cachedNames = cachedModelFileNames(modelUrl, await wllama.cacheManager.list());
-      const cachedBlobs = cachedNames ? await Promise.all(cachedNames.map((name) => wllama.cacheManager.open(name))) : null;
+      // OPFSの読み出しを並列化しない。Safariでの一時的なメモリ急増を避ける試行。
+      const cachedBlobs = await openCachedBlobsSequentially(wllama.cacheManager, cachedNames);
       const fromCache = Boolean(cachedBlobs?.every((blob) => blob && blob.size > 0));
       onCacheStatus(fromCache);
       if (IS_IOS && !fromCache) {
@@ -219,6 +241,7 @@ export class TranslatorRuntime {
         n_gpu_layers: useGpu ? 99 : 0,
         jinja: false,
       };
+      onStage('wasm-loading');
       if (fromCache) {
         // 保存済みBlobを直接読む。切り替え時の再取得や「100%ダウンロード」表示を防ぐ。
         await wllama.loadModel(cachedBlobs, settings);
@@ -228,6 +251,7 @@ export class TranslatorRuntime {
         });
         await wllama.loadModel(downloaded, settings);
       }
+      onStage('model-loaded');
       this.activeBackend = useGpu ? 'WebGPU' : 'CPU / WASM';
       this.profile = profile;
       return { backend: this.activeBackend, profile, fromCache, context: wllama.getLoadedContextInfo() };
